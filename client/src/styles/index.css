@@ -1,0 +1,581 @@
+/* ForeverTale Terminal Theme */
+
+/* Import Google Fonts - VT323 for authentic terminal look */
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;500;700&display=swap');
+
+/* CSS Custom Properties - Theme Colors */
+:root {
+  /* Primary phosphor green palette */
+  --color-primary: #33ff33;
+  --color-primary-dim: #1a8c1a;
+  --color-primary-bright: #66ff66;
+  --color-primary-glow: rgba(51, 255, 51, 0.5);
+
+  /* Background */
+  --color-bg: #000000;
+  --color-bg-elevated: #0a0a0a;
+
+  /* Accent colors */
+  --color-amber: #ffaa00;
+  --color-error: #ff3333;
+  --color-success: #33ff33;
+
+  /* Typography - using standard monospace to avoid rendering issues */
+  --font-terminal: 'IBM Plex Mono', 'Courier New', monospace;
+  --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Sizing */
+  --terminal-padding: 40px;
+  --line-height: 1.6;
+}
+
+/* Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-terminal);
+  font-size: 1.25rem;
+  line-height: var(--line-height);
+  color: var(--color-primary);
+  background-color: var(--color-bg);
+  /* Removed font-smoothing overrides - was causing rendering glitches */
+}
+
+/* Terminal container */
+.terminal {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-content {
+  flex: 1;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-terminal);
+  font-weight: normal;
+  color: var(--color-primary-bright);
+  margin-bottom: 1rem;
+}
+
+.title {
+  font-size: 3rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  font-size: 1.5rem;
+  color: var(--color-primary-dim);
+  margin-bottom: 2rem;
+}
+
+p {
+  margin-bottom: 1rem;
+}
+
+.dim {
+  color: var(--color-primary-dim);
+}
+
+.bright {
+  color: var(--color-primary-bright);
+}
+
+.amber {
+  color: var(--color-amber);
+}
+
+.error {
+  color: var(--color-error);
+}
+
+/* Blinking cursor */
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Input styling */
+input, textarea {
+  font-family: var(--font-terminal);
+  font-size: 1.25rem;
+  color: var(--color-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  caret-color: var(--color-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-primary-dim);
+}
+
+/* Command prompt */
+.prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.prompt-symbol {
+  color: var(--color-primary-bright);
+}
+
+.prompt-input {
+  flex: 1;
+}
+
+/* Links */
+a {
+  color: var(--color-primary-bright);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+a:hover {
+  border-bottom-color: var(--color-primary-bright);
+}
+
+/* Selection */
+::selection {
+  background: var(--color-primary);
+  color: var(--color-bg);
+}
+
+/* Home screen */
+.home {
+  margin-top: 2rem;
+}
+
+.home p {
+  margin-bottom: 0.5rem;
+}
+
+/* Typewriter effect utility class */
+.typewriter {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typing 2s steps(40, end);
+}
+
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+/* Loading states */
+.loading {
+  display: inline-block;
+}
+
+.loading::after {
+  content: '';
+  animation: loadingDots 1.5s infinite;
+}
+
+@keyframes loadingDots {
+  0% { content: '.'; }
+  33% { content: '..'; }
+  66% { content: '...'; }
+  100% { content: ''; }
+}
+
+/* ASCII art styling */
+.ascii-art {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: pre;
+  color: var(--color-primary-dim);
+}
+
+/* Dividers */
+.divider {
+  border: none;
+  border-top: 1px solid var(--color-primary-dim);
+  margin: 2rem 0;
+}
+
+.divider-double {
+  border-top: 2px double var(--color-primary-dim);
+}
+
+/* Menu items */
+.menu-item {
+  display: block;
+  padding: 0.5rem 0;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.menu-item:hover {
+  color: var(--color-primary-bright);
+}
+
+.menu-item.active {
+  color: var(--color-primary-bright);
+}
+
+.menu-item::before {
+  content: '> ';
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.menu-item:hover::before,
+.menu-item.active::before {
+  opacity: 1;
+}
+
+/* Utility classes */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-4 { margin-top: 2rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mb-4 { margin-bottom: 2rem; }
+
+/* ===================================
+   GAME CONTAINER & SCREENS
+   =================================== */
+
+/* Container without CRT effects for testing */
+.no-crt-container {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Title Screen */
+.title-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  text-align: center;
+  padding: 2rem;
+}
+
+.ascii-title {
+  /* Use basic system monospace for consistent character widths */
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.4rem;
+  line-height: 1.0;
+  white-space: pre;
+  color: var(--color-primary);
+  margin-bottom: 1rem;
+  /* No effects on title */
+  text-shadow: none;
+  animation: none !important;
+  /* Ensure consistent character spacing */
+  letter-spacing: 0;
+  /* Override parent's text-align: center which shifts each line individually */
+  text-align: left;
+}
+
+@media (min-width: 900px) {
+  .ascii-title {
+    font-size: 0.6rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .ascii-title {
+    font-size: 0.75rem;
+  }
+}
+
+.title-screen .subtitle {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.title-screen .version {
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+
+.title-spacer {
+  height: 4rem;
+}
+
+.title-footer {
+  margin-top: 4rem;
+  font-size: 0.9rem;
+}
+
+.title-footer p {
+  margin-bottom: 0.25rem;
+}
+
+.press-any-key {
+  font-size: 1.25rem;
+}
+
+/* Interview & Game Screens */
+.interview-screen,
+.game-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Terminal Component */
+.terminal-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1rem 0;
+}
+
+.terminal-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 1rem;
+}
+
+.terminal-message {
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.terminal-message.narrator {
+  color: var(--color-primary);
+}
+
+.terminal-message.player {
+  color: var(--color-primary-bright);
+}
+
+.terminal-message.system {
+  color: var(--color-primary-dim);
+  font-size: 0.9em;
+}
+
+.terminal-message.character {
+  color: var(--color-amber);
+}
+
+.character-name {
+  color: var(--color-amber);
+  font-weight: bold;
+}
+
+.typing-cursor {
+  animation: blink 0.7s step-end infinite;
+  margin-left: 2px;
+}
+
+/* Terminal Input */
+.terminal-input-container {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--color-primary-dim);
+  margin-top: auto;
+}
+
+.terminal-input-container .prompt-symbol {
+  margin-right: 0.5rem;
+  color: var(--color-primary-bright);
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-primary);
+  font-family: var(--font-terminal);
+  font-size: 1.25rem;
+}
+
+.terminal-input:disabled {
+  opacity: 0.5;
+}
+
+.terminal-input-container .cursor {
+  animation: blink 1s step-end infinite;
+}
+
+.terminal-input-container .cursor.hidden {
+  visibility: hidden;
+}
+
+/* Generating Screen */
+.generating-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+/* Analysis Screen */
+.analysis-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 2rem 0;
+}
+
+.analysis-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.analysis-header h2 {
+  font-size: 2rem;
+  letter-spacing: 0.2em;
+  margin: 1rem 0;
+}
+
+.analysis-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.analysis-section {
+  margin-bottom: 2rem;
+}
+
+.analysis-section.archetype h3 {
+  font-size: 1.75rem;
+  margin-top: 0.5rem;
+}
+
+.analysis-section.scores {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+.scores-container {
+  margin-top: 1rem;
+}
+
+.score-row {
+  margin-bottom: 0.75rem;
+}
+
+.score-label {
+  color: var(--color-primary-bright);
+  margin-bottom: 0.25rem;
+}
+
+.score-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.score-bar .bar {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.score-value {
+  color: var(--color-primary-bright);
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.analysis-section.summary .summary-text {
+  line-height: 1.8;
+  max-width: 60ch;
+}
+
+.analysis-footer {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+/* ===================================
+   SCROLLBAR STYLING
+   =================================== */
+
+.terminal-messages::-webkit-scrollbar,
+.analysis-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-messages::-webkit-scrollbar-track,
+.analysis-content::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+.terminal-messages::-webkit-scrollbar-thumb,
+.analysis-content::-webkit-scrollbar-thumb {
+  background: var(--color-primary-dim);
+  border-radius: 4px;
+}
+
+.terminal-messages::-webkit-scrollbar-thumb:hover,
+.analysis-content::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* ===================================
+   TITLE IMAGE STYLING
+   =================================== */
+
+.title-image-container {
+  max-width: 480px;
+  margin: 0 auto 1.5rem;
+  border: 2px solid var(--color-primary-dim);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 0 20px var(--color-primary-glow);
+}
+
+.title-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  /* Apply VGA-style filter for consistency */
+  image-rendering: pixelated;
+  filter: contrast(1.1) saturate(0.9);
+}
+
+.loading-text {
+  font-size: 0.9rem;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}

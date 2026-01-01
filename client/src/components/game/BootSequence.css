@@ -1,0 +1,88 @@
+/* Boot Sequence Screen */
+
+.boot-sequence {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.boot-terminal {
+  flex: 1;
+  overflow-y: auto;
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.boot-line {
+  white-space: pre-wrap;
+  animation: bootFadeIn 0.1s ease-out;
+}
+
+@keyframes bootFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.boot-normal {
+  color: var(--color-primary);
+}
+
+.boot-header {
+  color: var(--color-primary-bright);
+  text-shadow: 0 0 10px var(--color-primary-glow);
+}
+
+.boot-ok {
+  color: var(--color-primary);
+}
+
+.boot-ok::before {
+  content: '';
+}
+
+.boot-warn {
+  color: var(--color-amber);
+}
+
+.boot-error {
+  color: #ff4444;
+  text-shadow: 0 0 5px rgba(255, 68, 68, 0.5);
+}
+
+.boot-progress {
+  color: var(--color-primary);
+}
+
+/* Scrollbar */
+.boot-terminal::-webkit-scrollbar {
+  width: 6px;
+}
+
+.boot-terminal::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.boot-terminal::-webkit-scrollbar-thumb {
+  background: var(--color-primary-dim);
+  border-radius: 3px;
+}
+
+.boot-skip-hint {
+  margin-top: 1rem;
+  color: var(--color-primary-dim);
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}

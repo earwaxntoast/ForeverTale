@@ -1,0 +1,311 @@
+/* Game Sidebar Styles - 3 Column Layout */
+
+.game-sidebar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.5rem;
+  height: 100%;
+  padding: 0.5rem;
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  border-left: 1px solid var(--color-primary-dim);
+  overflow: hidden;
+}
+
+.sidebar-loading,
+.sidebar-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 1 / -1;
+  height: 100%;
+  color: var(--color-primary-dim);
+}
+
+.sidebar-error {
+  color: var(--color-amber);
+}
+
+/* Columns */
+.sidebar-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-left {
+  border-right: 1px solid var(--color-primary-dim);
+  padding-right: 0.5rem;
+}
+
+.sidebar-middle {
+  border-right: 1px solid var(--color-primary-dim);
+  padding-right: 0.5rem;
+}
+
+.sidebar-right {
+  /* Map column */
+}
+
+/* Sections */
+.sidebar-section {
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Character Section */
+.character-section {
+  text-align: center;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-primary-dim);
+  flex-shrink: 0;
+}
+
+.sidebar-title {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: var(--color-primary-bright);
+  text-shadow: 0 0 8px var(--color-primary-glow);
+}
+
+.character-traits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.trait-tag {
+  padding: 0.1rem 0.3rem;
+  font-size: 0.55rem;
+  background: rgba(51, 255, 51, 0.1);
+  border: 1px solid var(--color-primary-dim);
+  border-radius: 2px;
+}
+
+/* Section Headers */
+.section-header {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.6rem;
+  font-weight: bold;
+  color: var(--color-primary-dim);
+  letter-spacing: 0.1em;
+  /* Reduce CRT blur on small header text */
+  text-shadow: 0 0 1px var(--color-primary-dim) !important;
+  animation: none !important;
+}
+
+/* Empty section placeholder */
+.empty-section {
+  font-size: 0.6rem;
+  color: var(--color-primary-dim);
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* Abilities */
+.abilities-section {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.abilities-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ability-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.2rem;
+  align-items: center;
+  margin-bottom: 0.2rem;
+  font-size: 0.6rem;
+}
+
+.ability-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ability-level {
+  color: var(--color-primary-dim);
+  font-size: 0.55rem;
+  /* Reduce CRT blur on small level text */
+  text-shadow: 0 0 1px var(--color-primary-dim) !important;
+  animation: none !important;
+}
+
+.ability-progress {
+  width: 1.5rem;
+  height: 3px;
+  background: rgba(51, 255, 51, 0.2);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.ability-progress-bar {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+/* Inventory Section */
+.inventory-section {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--color-primary-dim);
+  padding-bottom: 0.5rem;
+}
+
+.inventory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.inventory-item {
+  padding: 0.15rem 0.25rem;
+  font-size: 0.6rem;
+  margin-bottom: 0.15rem;
+  background: rgba(51, 255, 51, 0.05);
+  border-left: 2px solid var(--color-primary-dim);
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-item:hover {
+  background: rgba(51, 255, 51, 0.15);
+  border-left-color: var(--color-primary);
+}
+
+/* Objectives Section */
+.objectives-section {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.objectives-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.objective-item {
+  padding: 0.15rem 0;
+  font-size: 0.6rem;
+  margin-bottom: 0.15rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.objective-item.completed {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.objective-checkbox {
+  flex-shrink: 0;
+  color: var(--color-primary-dim);
+}
+
+/* Map Section */
+.map-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ascii-map {
+  margin: 0;
+  padding: 0.25rem;
+  font-size: 0.5rem;
+  line-height: 1.15;
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-primary-dim);
+  border-radius: 2px;
+  overflow: hidden;
+  white-space: pre;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.ascii-map div {
+  min-height: 0.7rem;
+}
+
+.map-legend {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 0.25rem;
+  padding-top: 0.2rem;
+  font-size: 0.5rem;
+  color: var(--color-primary-dim);
+  flex-shrink: 0;
+  /* Reduce CRT blur on small legend text */
+  text-shadow: 0 0 1px var(--color-primary-dim) !important;
+  animation: none !important;
+}
+
+.map-legend span {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+/* Scrollbar styling */
+.abilities-list::-webkit-scrollbar,
+.inventory-list::-webkit-scrollbar,
+.objectives-list::-webkit-scrollbar {
+  width: 3px;
+}
+
+.abilities-list::-webkit-scrollbar-track,
+.inventory-list::-webkit-scrollbar-track,
+.objectives-list::-webkit-scrollbar-track {
+  background: rgba(51, 255, 51, 0.1);
+}
+
+.abilities-list::-webkit-scrollbar-thumb,
+.inventory-list::-webkit-scrollbar-thumb,
+.objectives-list::-webkit-scrollbar-thumb {
+  background: var(--color-primary-dim);
+  border-radius: 2px;
+}
+
+.abilities-list::-webkit-scrollbar-thumb:hover,
+.inventory-list::-webkit-scrollbar-thumb:hover,
+.objectives-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}

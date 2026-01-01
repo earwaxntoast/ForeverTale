@@ -1,0 +1,763 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users & Auth
+model User {
+  id          String   @id @default(uuid())
+  firebaseUid String   @unique @map("firebase_uid")
+  email       String
+  displayName String?  @map("display_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  preferences        UserPreferences?
+  subscription       Subscription?
+  stories            Story[]
+  callbackCandidates CallbackCandidate[]
+
+  @@map("users")
+}
+
+model UserPreferences {
+  userId            String         @id @map("user_id")
+  mediaFrequency    MediaFrequency @default(key_moments) @map("media_frequency")
+  mediaTypes        MediaTypes     @default(images) @map("media_types")
+  audioMode         AudioMode      @default(none) @map("audio_mode")
+  preferredThemes   Json           @default("[]") @map("preferred_themes")
+  narratorStyle     String         @default("balanced") @map("narrator_style")
+  crtEffectsEnabled Boolean        @default(true) @map("crt_effects_enabled")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+enum MediaFrequency {
+  every_scene
+  key_moments
+  manual
+  off
+}
+
+enum MediaTypes {
+  images
+  videos
+  both
+  none
+}
+
+enum AudioMode {
+  none
+  effects_only
+  voiceover_only
+  full_character
+}
+
+// Subscriptions
+model Subscription {
+  id                     String             @id @default(uuid())
+  userId                 String             @unique @map("user_id")
+  stripeSubscriptionId   String?            @unique @map("stripe_subscription_id")
+  stripeCustomerId       String?            @map("stripe_customer_id")
+  tier                   SubscriptionTier   @default(free)
+  status                 SubscriptionStatus @default(active)
+  currentPeriodStart     DateTime?          @map("current_period_start")
+  currentPeriodEnd       DateTime?          @map("current_period_end")
+  storiesUsedThisPeriod  Int                @default(0) @map("stories_used_this_period")
+  createdAt              DateTime           @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionTier {
+  free
+  basic
+  pro
+  unlimited
+}
+
+enum SubscriptionStatus {
+  active
+  cancelled
+  past_due
+}
+
+// Stories
+model Story {
+  id               String      @id @default(uuid())
+  userId           String      @map("user_id")
+  title            String?
+  status           StoryStatus @default(in_progress)
+  genreTags        Json        @default("[]") @map("genre_tags")
+  initialInterview Json?       @map("initial_interview")
+  storySeed        Json?       @map("story_seed")
+  currentChapterId String?     @map("current_chapter_id")
+  currentSceneId   String?     @map("current_scene_id")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  completedAt      DateTime?   @map("completed_at")
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapters          Chapter[]
+  characters        Character[]
+  locations         Location[]
+  events            GameEvent[]
+  items             Item[]
+  personalityScores PersonalityScores?
+  personalityEvents PersonalityEvent[]
+  storyAnalysis     StoryAnalysis?
+  generatedMedia    GeneratedMedia[]
+  generatedAudio    GeneratedAudio[]
+  callbackCandidates CallbackCandidate[]
+  callbackInstances  CallbackInstance[]
+
+  // Game world additions
+  rooms             Room[]
+  gameObjects       GameObject[]
+  playerState       PlayerState?
+  interactionCache  InteractionCache[]
+  storyFacts        StoryFact[]
+  dilemmaPoints     DilemmaPoint[]
+  transcript        GameTranscript[]
+
+  // Character & Skills
+  characterBackstory CharacterBackstory?
+  playerAbilities    PlayerAbility[]
+  skillChecks        SkillCheck[]
+  timedEvents        TimedEvent[]
+
+  @@map("stories")
+}
+
+enum StoryStatus {
+  in_progress
+  completed
+  abandoned
+}
+
+// Chapters
+model Chapter {
+  id            String   @id @default(uuid())
+  storyId       String   @map("story_id")
+  chapterNumber Int      @map("chapter_number")
+  title         String?
+  summary       String?
+  status        String   @default("in_progress")
+  createdAt     DateTime @default(now()) @map("created_at")
+  completedAt   DateTime? @map("completed_at")
+
+  story  Story   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  scenes Scene[]
+
+  @@map("chapters")
+}
+
+// Scenes
+model Scene {
+  id            String      @id @default(uuid())
+  chapterId     String      @map("chapter_id")
+  sceneNumber   Int         @map("scene_number")
+  sceneType     SceneType   @map("scene_type")
+  narrativeText String      @map("narrative_text")
+  playerInput   String?     @map("player_input")
+  aiProvider    AIProvider  @map("ai_provider")
+  tokensUsed    Int?        @map("tokens_used")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  chapter           Chapter            @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  personalityEvents PersonalityEvent[]
+  generatedMedia    GeneratedMedia[]
+  generatedAudio    GeneratedAudio[]
+  callbackInstances CallbackInstance[]
+
+  // Entity references for first/last appearance
+  charactersFirstAppearance Character[] @relation("CharacterFirstAppearance")
+  charactersLastSeen        Character[] @relation("CharacterLastSeen")
+  locationsFirstAppearance  Location[]  @relation("LocationFirstAppearance")
+  itemsFirstAppearance      Item[]      @relation("ItemFirstAppearance")
+  events                    GameEvent[]
+
+  @@map("scenes")
+}
+
+enum SceneType {
+  dialogue
+  action
+  exploration
+  decision
+}
+
+enum AIProvider {
+  claude
+  grok
+  gemini
+}
+
+// Characters
+model Character {
+  id                     String   @id @default(uuid())
+  storyId                String   @map("story_id")
+  name                   String
+  description            String?
+  personalityTraits      Json     @default("{}") @map("personality_traits")
+  relationships          Json     @default("[]")
+  firstAppearanceSceneId String?  @map("first_appearance_scene_id")
+  lastSeenSceneId        String?  @map("last_seen_scene_id")
+  isMajorCharacter       Boolean  @default(false) @map("is_major_character")
+  imageUrl               String?  @map("image_url")
+  elevenLabsVoiceId      String?  @map("elevenlabs_voice_id")
+  voiceSettings          Json?    @map("voice_settings")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  // Room-based location tracking
+  currentRoomId          String?  @map("current_room_id")
+
+  story               Story           @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  firstAppearanceScene Scene?         @relation("CharacterFirstAppearance", fields: [firstAppearanceSceneId], references: [id])
+  lastSeenScene        Scene?         @relation("CharacterLastSeen", fields: [lastSeenSceneId], references: [id])
+  currentRoom          Room?          @relation("CharacterCurrentRoom", fields: [currentRoomId], references: [id])
+  ownedItems           Item[]
+  dialogueAudio        GeneratedAudio[]
+
+  @@map("characters")
+}
+
+// Locations
+model Location {
+  id                     String   @id @default(uuid())
+  storyId                String   @map("story_id")
+  name                   String
+  description            String?
+  attributes             Json     @default("{}")
+  connectedLocations     Json     @default("[]") @map("connected_locations")
+  firstAppearanceSceneId String?  @map("first_appearance_scene_id")
+  imageUrl               String?  @map("image_url")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  story                Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  firstAppearanceScene Scene? @relation("LocationFirstAppearance", fields: [firstAppearanceSceneId], references: [id])
+  items                Item[]
+
+  @@map("locations")
+}
+
+// Events
+model GameEvent {
+  id                 String   @id @default(uuid())
+  storyId            String   @map("story_id")
+  sceneId            String?  @map("scene_id")
+  eventType          String   @map("event_type")
+  description        String
+  outcome            String?
+  impactScore        Int      @default(0) @map("impact_score")
+  involvedCharacters Json     @default("[]") @map("involved_characters")
+  involvedLocations  Json     @default("[]") @map("involved_locations")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  story Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  scene Scene? @relation(fields: [sceneId], references: [id])
+
+  @@map("events")
+}
+
+// Items
+model Item {
+  id                     String   @id @default(uuid())
+  storyId                String   @map("story_id")
+  name                   String
+  description            String?
+  properties             Json     @default("{}")
+  currentOwnerId         String?  @map("current_owner_id")
+  currentLocationId      String?  @map("current_location_id")
+  firstAppearanceSceneId String?  @map("first_appearance_scene_id")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  story                Story      @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  currentOwner         Character? @relation(fields: [currentOwnerId], references: [id])
+  currentLocation      Location?  @relation(fields: [currentLocationId], references: [id])
+  firstAppearanceScene Scene?     @relation("ItemFirstAppearance", fields: [firstAppearanceSceneId], references: [id])
+
+  @@map("items")
+}
+
+// Personality Scoring
+model PersonalityScores {
+  id                        String   @id @default(uuid())
+  storyId                   String   @unique @map("story_id")
+  openness                  Decimal  @default(50) @db.Decimal(5, 2)
+  conscientiousness         Decimal  @default(50) @db.Decimal(5, 2)
+  extraversion              Decimal  @default(50) @db.Decimal(5, 2)
+  agreeableness             Decimal  @default(50) @db.Decimal(5, 2)
+  neuroticism               Decimal  @default(50) @db.Decimal(5, 2)
+  opennessConfidence        Int      @default(0) @map("openness_confidence")
+  conscientiousnessConfidence Int    @default(0) @map("conscientiousness_confidence")
+  extraversionConfidence    Int      @default(0) @map("extraversion_confidence")
+  agreeablenessConfidence   Int      @default(0) @map("agreeableness_confidence")
+  neuroticismConfidence     Int      @default(0) @map("neuroticism_confidence")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@map("personality_scores")
+}
+
+model PersonalityEvent {
+  id           String   @id @default(uuid())
+  storyId      String   @map("story_id")
+  sceneId      String?  @map("scene_id")
+  roomId       String?  @map("room_id")
+  dilemmaId    String?  @map("dilemma_id") // If this was a planned dilemma
+
+  // What happened
+  playerAction String   @map("player_action")
+  choiceContext String? @map("choice_context") // What the situation/dilemma was
+  alternativesAvailable Json @default("[]") @map("alternatives_available") // What else they could have done
+
+  // Scoring
+  dimension    String   // O, C, E, A, or N
+  delta        Decimal  @db.Decimal(5, 2)
+  confidence   Int      @default(5) // 1-10, how clear was this signal
+  reasoning    String   // AI's explanation
+
+  // For end-game analysis
+  isKeyMoment  Boolean  @default(false) @map("is_key_moment") // Highlight in final analysis
+
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  story Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  scene Scene? @relation(fields: [sceneId], references: [id])
+
+  @@map("personality_events")
+}
+
+model StoryAnalysis {
+  id                 String   @id @default(uuid())
+  storyId            String   @unique @map("story_id")
+  finalScores        Json     @map("final_scores")
+  personalitySummary String   @map("personality_summary")
+  keyMoments         Json     @default("[]") @map("key_moments")
+  archetype          String
+  growthNarrative    String   @map("growth_narrative")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@map("story_analyses")
+}
+
+// Cross-Story Callbacks
+model CallbackCandidate {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  sourceStoryId     String   @map("source_story_id")
+  entityType        String   @map("entity_type")
+  entityId          String   @map("entity_id")
+  memorabilityScore Int      @default(0) @map("memorability_score")
+  themes            Json     @default("[]")
+  summary           String
+  timesUsed         Int      @default(0) @map("times_used")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceStory Story              @relation(fields: [sourceStoryId], references: [id], onDelete: Cascade)
+  instances   CallbackInstance[]
+
+  @@map("callback_candidates")
+}
+
+model CallbackInstance {
+  id                  String   @id @default(uuid())
+  callbackCandidateId String   @map("callback_candidate_id")
+  targetStoryId       String   @map("target_story_id")
+  targetSceneId       String?  @map("target_scene_id")
+  adaptationNotes     String?  @map("adaptation_notes")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  callbackCandidate CallbackCandidate @relation(fields: [callbackCandidateId], references: [id])
+  targetStory       Story             @relation(fields: [targetStoryId], references: [id], onDelete: Cascade)
+  targetScene       Scene?            @relation(fields: [targetSceneId], references: [id])
+
+  @@map("callback_instances")
+}
+
+// Media Storage
+model GeneratedMedia {
+  id             String   @id @default(uuid())
+  storyId        String   @map("story_id")
+  sceneId        String?  @map("scene_id")
+  mediaType      String   @map("media_type")
+  promptUsed     String   @map("prompt_used")
+  gcsUrl         String   @map("gcs_url")
+  gcsUrlRaw      String?  @map("gcs_url_raw")
+  thumbnailUrl   String?  @map("thumbnail_url")
+  generationCost Decimal? @map("generation_cost") @db.Decimal(10, 4)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  story Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  scene Scene? @relation(fields: [sceneId], references: [id])
+
+  @@map("generated_media")
+}
+
+model GeneratedAudio {
+  id                String   @id @default(uuid())
+  storyId           String   @map("story_id")
+  sceneId           String?  @map("scene_id")
+  audioType         String   @map("audio_type")
+  characterId       String?  @map("character_id")
+  textContent       String?  @map("text_content")
+  effectName        String?  @map("effect_name")
+  elevenLabsVoiceId String?  @map("elevenlabs_voice_id")
+  gcsUrl            String   @map("gcs_url")
+  durationSeconds   Decimal? @map("duration_seconds") @db.Decimal(8, 2)
+  generationCost    Decimal? @map("generation_cost") @db.Decimal(10, 4)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  story     Story      @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  scene     Scene?     @relation(fields: [sceneId], references: [id])
+  character Character? @relation(fields: [characterId], references: [id])
+
+  @@map("generated_audio")
+}
+
+model SoundEffect {
+  id              String   @id @default(uuid())
+  name            String
+  category        String
+  tags            Json     @default("[]")
+  gcsUrl          String   @map("gcs_url")
+  durationSeconds Decimal? @map("duration_seconds") @db.Decimal(8, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("sound_effects")
+}
+
+// ============================================
+// CHARACTER & SKILLS - RPG-style ability system
+// ============================================
+
+model CharacterBackstory {
+  id          String   @id @default(uuid())
+  storyId     String   @unique @map("story_id")
+  name        String   // Character name from interview
+  background  String   // Generated backstory narrative
+  isRevealed  Boolean  @default(false) @map("is_revealed") // Has player discovered their past?
+  traits      Json     @default("[]") // Personality traits from interview
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  story       Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@map("character_backstory")
+}
+
+model PlayerAbility {
+  id          String   @id @default(uuid())
+  storyId     String   @map("story_id")
+  name        String   // "Hacking", "Boating", "Persuasion"
+  level       Decimal  @default(1) @db.Decimal(5, 2) // 1.00 - 20.00, fractional for progression
+  timesUsed   Int      @default(0) @map("times_used")
+  timesSucceeded Int   @default(0) @map("times_succeeded")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // How was this acquired?
+  origin      String   @default("attempted") // "backstory", "attempted", "trained", "story_event"
+
+  // Trigger verbs for this skill
+  triggerVerbs Json    @default("[]") @map("trigger_verbs") // ["hack", "breach", "crack"]
+
+  story       Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, name])
+  @@map("player_abilities")
+}
+
+model SkillCheck {
+  id           String   @id @default(uuid())
+  storyId      String   @map("story_id")
+  abilityName  String   @map("ability_name")
+  abilityLevel Decimal  @map("ability_level") @db.Decimal(5, 2)
+  difficulty   Int      // 0-40
+  roll         Int      // 1-20 (the d20 result)
+  total        Decimal  @db.Decimal(5, 2) // roll + abilityLevel
+  success      Boolean
+  isNat20      Boolean  @default(false) @map("is_nat_20")
+  isNat1       Boolean  @default(false) @map("is_nat_1")
+  skillGain    Decimal  @default(0) @map("skill_gain") @db.Decimal(5, 2)
+  context      String   // What were they trying to do
+  narrative    String?  // The resulting narrative
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  story        Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@map("skill_checks")
+}
+
+// ============================================
+// GAME TRANSCRIPT - Complete session log
+// ============================================
+
+model GameTranscript {
+  id          String   @id @default(uuid())
+  storyId     String   @map("story_id")
+  turnNumber  Int      @map("turn_number")
+  speaker     String   // 'player', 'narrator', 'system', 'character:{name}'
+  content     String   // The actual text, unaltered
+  messageType String   @default("narrative") @map("message_type") // 'narrative', 'command', 'dialogue', 'system'
+  roomId      String?  @map("room_id") // Where this happened
+  metadata    Json     @default("{}") // Extra context if needed
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId, turnNumber])
+  @@map("game_transcript")
+}
+
+// ============================================
+// TIMED EVENTS - Turn-based countdown system
+// ============================================
+
+model TimedEvent {
+  id              String   @id @default(uuid())
+  storyId         String   @map("story_id")
+  roomId          String?  @map("room_id") // null = affects entire story, set = room-specific
+
+  name            String   // Internal identifier (e.g., "guards_arriving")
+  description     String   // What's happening (for AI context)
+
+  // Countdown mechanics
+  turnsRemaining  Int      @map("turns_remaining") // Current countdown
+  totalTurns      Int      @map("total_turns") // Original countdown (for percentage calc)
+
+  // Narratives at different stages
+  progressNarratives Json  @default("[]") @map("progress_narratives")
+  // Array of: { atTurns: number, narrative: string }
+  // e.g., [{ atTurns: 3, narrative: "The footsteps are getting closer..." }]
+
+  triggerNarrative String  @map("trigger_narrative") // What happens when it fires
+
+  // Consequences
+  consequence     Json     @default("{}") // { type: "game_over" | "room_change" | "item_lost" | "custom", ... }
+
+  // State
+  isActive        Boolean  @default(true) @map("is_active")
+  isTriggered     Boolean  @default(false) @map("is_triggered")
+  canBePrevented  Boolean  @default(true) @map("can_be_prevented") // Can player stop it?
+  preventionHint  String?  @map("prevention_hint") // Hint for how to stop it
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  triggeredAt     DateTime? @map("triggered_at")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  room  Room?  @relation(fields: [roomId], references: [id])
+
+  @@index([storyId, isActive])
+  @@map("timed_events")
+}
+
+// ============================================
+// GAME WORLD - Zork-style Navigation System
+// ============================================
+
+// Rooms - Grid-based navigable spaces
+model Room {
+  id              String   @id @default(uuid())
+  storyId         String   @map("story_id")
+  name            String
+  description     String?  // AI-generated on first visit, cached thereafter
+  shortDescription String? @map("short_description") // Brief version for revisits
+
+  // Grid coordinates
+  x               Int
+  y               Int
+  z               Int      @default(0) // For multi-level (basement, upstairs, etc.)
+
+  // Exits - references to other room IDs (null = no exit / wall)
+  northRoomId     String?  @map("north_room_id")
+  southRoomId     String?  @map("south_room_id")
+  eastRoomId      String?  @map("east_room_id")
+  westRoomId      String?  @map("west_room_id")
+  upRoomId        String?  @map("up_room_id")
+  downRoomId      String?  @map("down_room_id")
+
+  // Room metadata
+  isStoryCritical Boolean  @default(false) @map("is_story_critical")
+  isGenerated     Boolean  @default(false) @map("is_generated") // false = pre-planned, true = dynamically created
+  firstVisitedAt  DateTime? @map("first_visited_at")
+  visitCount      Int      @default(0) @map("visit_count")
+
+  // Atmosphere for AI context
+  atmosphere      Json     @default("{}") // { lighting, mood, sounds, smells }
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  story           Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  gameObjects     GameObject[]
+  charactersHere  Character[]  @relation("CharacterCurrentRoom")
+  dilemmaPoints   DilemmaPoint[]
+  timedEvents     TimedEvent[]
+
+  @@unique([storyId, x, y, z])
+  @@map("rooms")
+}
+
+// Game Objects - Interactive items in rooms
+model GameObject {
+  id              String   @id @default(uuid())
+  storyId         String   @map("story_id")
+  roomId          String?  @map("room_id") // null = in player inventory
+  name            String
+  description     String?
+
+  // Object properties
+  isTakeable      Boolean  @default(true) @map("is_takeable")
+  isContainer     Boolean  @default(false) @map("is_container")
+  isOpen          Boolean  @default(false) @map("is_open") // for containers/doors
+  isLocked        Boolean  @default(false) @map("is_locked")
+  keyObjectId     String?  @map("key_object_id") // what unlocks this
+
+  // State tracking
+  state           Json     @default("{}") // flexible state: { broken: false, lit: true, etc. }
+
+  // For story coherence
+  isStoryCritical Boolean  @default(false) @map("is_story_critical")
+  firstExaminedAt DateTime? @map("first_examined_at")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  room            Room?    @relation(fields: [roomId], references: [id])
+  containedObjects GameObject[] @relation("ContainedIn")
+  containedIn     GameObject?   @relation("ContainedIn", fields: [containedInId], references: [id])
+  containedInId   String?       @map("contained_in_id")
+
+  @@map("game_objects")
+}
+
+// Player State - Current game state
+model PlayerState {
+  id              String   @id @default(uuid())
+  storyId         String   @unique @map("story_id")
+  currentRoomId   String   @map("current_room_id")
+
+  // Game progress
+  turnCount       Int      @default(0) @map("turn_count")
+  score           Int      @default(0) // optional gamification
+
+  // Inventory stored as array of GameObject IDs (objects with null roomId)
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@map("player_state")
+}
+
+// Interaction Cache - Store AI responses for consistency
+model InteractionCache {
+  id              String   @id @default(uuid())
+  storyId         String   @map("story_id")
+  roomId          String?  @map("room_id")
+  objectId        String?  @map("object_id")
+  characterId     String?  @map("character_id")
+
+  // Command matching
+  commandType     String   @map("command_type") // LOOK, EXAMINE, USE, TALK, UNKNOWN, etc.
+  commandTarget   String   @map("command_target") // normalized target name
+  commandHash     String   @map("command_hash") // hash of full command for exact match
+
+  // Semantic matching for UNKNOWN commands (questions, freeform input)
+  semanticTopics  Json     @default("[]") @map("semantic_topics") // ["memories", "consent", "storage"]
+  semanticHash    String?  @map("semantic_hash") // hash of sorted topics for similarity matching
+
+  // Cached response
+  response        String
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId, commandHash])
+  @@index([storyId, semanticHash])
+  @@map("interaction_cache")
+}
+
+// Story Facts - Established truths for coherence
+model StoryFact {
+  id              String   @id @default(uuid())
+  storyId         String   @map("story_id")
+
+  factType        String   @map("fact_type") // WORLD, CHARACTER, PLAYER_ACTION, STORY_EVENT, SECRET
+  content         String   // The fact itself
+  source          String   // How this was established (AI, player action, story seed)
+
+  // For AI context injection
+  importance      Int      @default(5) // 1-10, higher = more important to include
+  isContradicted  Boolean  @default(false) @map("is_contradicted") // player broke this fact
+
+  // Secret/Revelation system
+  isSecret        Boolean  @default(false) @map("is_secret") // True = don't reveal to player yet
+  isRevealed      Boolean  @default(false) @map("is_revealed") // Player has discovered this
+  revealedAt      DateTime? @map("revealed_at")
+  deflectionHint  String?  @map("deflection_hint") // "The keeper seems evasive about this..."
+  revealTrigger   String?  @map("reveal_trigger") // Condition: "player finds the diary"
+
+  // For semantic matching (normalized topics for caching)
+  topics          Json     @default("[]") // ["memories", "storage", "consent", "keeper"]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@map("story_facts")
+}
+
+// Dilemma Points - Personality-revealing choice moments
+model DilemmaPoint {
+  id              String   @id @default(uuid())
+  storyId         String   @map("story_id")
+  roomId          String?  @map("room_id") // Where this dilemma occurs (if location-based)
+
+  // Dilemma design
+  name            String   // Internal name for reference
+  description     String   // Setup/context for the dilemma
+  primaryDimension String  @map("primary_dimension") // O, C, E, A, or N
+  secondaryDimension String? @map("secondary_dimension") // Optional second dimension tested
+
+  // The choices
+  optionA         Json     @map("option_a") // { description, personalityImplication, outcomeHint }
+  optionB         Json     @map("option_b")
+  optionC         Json?    @map("option_c") // Optional third choice
+
+  // Tracking
+  isTriggered     Boolean  @default(false) @map("is_triggered")
+  triggeredAt     DateTime? @map("triggered_at")
+  chosenOption    String?  @map("chosen_option") // A, B, C, or OTHER for creative solutions
+  playerResponse  String?  @map("player_response") // What the player actually typed
+
+  // For ordering/prerequisites
+  prerequisiteEventIds Json @default("[]") @map("prerequisite_event_ids")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  room            Room?    @relation(fields: [roomId], references: [id])
+
+  @@map("dilemma_points")
+}

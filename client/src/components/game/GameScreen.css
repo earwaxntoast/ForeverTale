@@ -1,0 +1,59 @@
+/* GameScreen Layout - Sidebar at bottom */
+
+.game-screen.game-screen-with-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.game-screen-with-sidebar .game-main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.game-screen-with-sidebar .game-sidebar-container {
+  width: 100%;
+  height: 25%;
+  min-height: 120px;
+  max-height: 200px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--color-primary-dim);
+}
+
+/* Ensure terminal fills its container */
+.game-main .terminal-container {
+  height: 100%;
+}
+
+/* Sidebar horizontal layout for bottom bar */
+.game-screen-with-sidebar .game-sidebar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  overflow-x: auto;
+  border-left: none;
+}
+
+.game-screen-with-sidebar .game-sidebar .sidebar-section {
+  flex: 1;
+  min-width: 150px;
+  margin-right: 1rem;
+  margin-bottom: 0;
+  border-left: 1px solid var(--color-primary-dim);
+  padding-left: 0.5rem;
+}
+
+.game-screen-with-sidebar .game-sidebar .character-section {
+  border-left: none;
+  border-bottom: none;
+  padding-left: 0;
+  padding-bottom: 0;
+}
+
+.game-screen-with-sidebar .game-sidebar .map-section {
+  margin-top: 0;
+  border-top: none;
+}
