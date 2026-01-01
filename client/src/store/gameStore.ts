@@ -50,6 +50,10 @@ interface GameState {
   setMessageTypingComplete: (id: string) => void;
 
   // Interview state
+  interviewPhase: number;
+  setInterviewPhase: (phase: number) => void;
+  playerName: string | null;
+  setPlayerName: (name: string | null) => void;
   interviewExchanges: InterviewExchange[];
   addInterviewExchange: (exchange: InterviewExchange) => void;
   clearInterview: () => void;
@@ -125,11 +129,15 @@ export const useGameStore = create<GameState>((set) => ({
   })),
 
   // Interview
+  interviewPhase: 0,
+  setInterviewPhase: (phase) => set({ interviewPhase: phase }),
+  playerName: null,
+  setPlayerName: (name) => set({ playerName: name }),
   interviewExchanges: [],
   addInterviewExchange: (exchange) => set((state) => ({
     interviewExchanges: [...state.interviewExchanges, exchange],
   })),
-  clearInterview: () => set({ interviewExchanges: [] }),
+  clearInterview: () => set({ interviewExchanges: [], interviewPhase: 0, playerName: null }),
 
   // Story
   currentStoryId: null,
@@ -165,6 +173,8 @@ export const useGameStore = create<GameState>((set) => ({
   resetGame: () => set({
     screen: 'title',
     messages: [],
+    interviewPhase: 0,
+    playerName: null,
     interviewExchanges: [],
     currentStoryId: null,
     isInputEnabled: false,

@@ -115,7 +115,32 @@ export function GameSidebar({ storyId, refreshTrigger }: GameSidebarProps) {
         {/* Objectives */}
         <section className="sidebar-section objectives-section">
           <h3 className="section-header">OBJECTIVES</h3>
-          <div className="empty-section">No active objectives</div>
+          {data.objectives && data.objectives.length > 0 ? (
+            <ul className="objectives-list">
+              {data.objectives.map((objective) => (
+                <li key={objective.id} className="objective-item">
+                  <div className="objective-name">{objective.name}</div>
+                  <ul className="objective-steps">
+                    {objective.steps.map((step, idx) => (
+                      <li
+                        key={idx}
+                        className={`objective-step ${step.completed ? 'completed' : ''}`}
+                      >
+                        <span className="step-checkbox">
+                          {step.completed ? '[x]' : '[ ]'}
+                        </span>
+                        <span className={step.completed ? 'step-text-completed' : ''}>
+                          {step.description}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-section">No active objectives</div>
+          )}
         </section>
       </div>
 

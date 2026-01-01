@@ -6,6 +6,7 @@ interface InterviewRequest {
   playerName: string;
   currentPhase: number;
   previousExchanges: { question: string; answer: string }[];
+  currentQuestion: string; // The question being answered
   latestResponse: string;
 }
 
@@ -18,6 +19,7 @@ interface InterviewResponse {
 interface GenerateStoryRequest {
   playerName: string;
   interviewExchanges: { question: string; answer: string }[];
+  storyPreference?: string; // Player's preferred story type (fantasy, sci-fi, etc.)
 }
 
 interface GenerateStoryResponse {
@@ -104,6 +106,18 @@ export interface SidebarInventoryItem {
   description: string;
 }
 
+export interface SidebarObjectiveStep {
+  description: string;
+  completed: boolean;
+}
+
+export interface SidebarObjective {
+  id: string;
+  name: string;
+  description: string;
+  steps: SidebarObjectiveStep[];
+}
+
 export interface SidebarResponse {
   character: {
     name: string;
@@ -114,6 +128,7 @@ export interface SidebarResponse {
   abilities: SidebarAbility[];
   notes: string[];
   inventory: SidebarInventoryItem[];
+  objectives: SidebarObjective[];
   map: SidebarMapRoom[];
   currentRoomId: string | null;
 }

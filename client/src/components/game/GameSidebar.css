@@ -225,14 +225,45 @@
   gap: 0.25rem;
 }
 
-.objective-item.completed {
-  text-decoration: line-through;
+.objective-item {
+  margin-bottom: 0.5rem;
+}
+
+.objective-name {
+  font-size: 0.65rem;
+  font-weight: bold;
+  color: var(--color-primary);
+  margin-bottom: 0.2rem;
+}
+
+.objective-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  padding-left: 0.25rem;
+}
+
+.objective-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.2rem;
+  font-size: 0.55rem;
+  margin-bottom: 0.1rem;
+  color: var(--color-primary-dim);
+}
+
+.objective-step.completed {
   opacity: 0.5;
 }
 
-.objective-checkbox {
+.step-checkbox {
   flex-shrink: 0;
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
   color: var(--color-primary-dim);
+}
+
+.step-text-completed {
+  text-decoration: line-through;
 }
 
 /* Map Section */

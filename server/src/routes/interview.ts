@@ -7,6 +7,7 @@ interface InterviewRequest {
   playerName: string;
   currentPhase: number;
   previousExchanges: { question: string; answer: string }[];
+  currentQuestion: string;
   latestResponse: string;
 }
 
@@ -22,6 +23,7 @@ router.post('/', async (req: Request, res: Response) => {
       playerName: body.playerName,
       currentPhase: body.currentPhase || 0,
       previousExchanges: body.previousExchanges || [],
+      currentQuestion: body.currentQuestion || '',
       latestResponse: body.latestResponse,
     });
 

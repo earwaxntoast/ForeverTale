@@ -136,6 +136,9 @@ model Story {
   skillChecks        SkillCheck[]
   timedEvents        TimedEvent[]
 
+  // Puzzle system
+  puzzles            Puzzle[]
+
   @@map("stories")
 }
 
@@ -477,6 +480,7 @@ model PlayerAbility {
 
   // Trigger verbs for this skill
   triggerVerbs Json    @default("[]") @map("trigger_verbs") // ["hack", "breach", "crack"]
+  triggerNouns Json    @default("[]") @map("trigger_nouns") // ["terminal", "console", "computer"]
 
   story       Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
@@ -561,8 +565,9 @@ model TimedEvent {
   createdAt       DateTime @default(now()) @map("created_at")
   triggeredAt     DateTime? @map("triggered_at")
 
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  room  Room?  @relation(fields: [roomId], references: [id])
+  story       Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  room        Room?        @relation(fields: [roomId], references: [id])
+  puzzleSteps PuzzleStep[]
 
   @@index([storyId, isActive])
   @@map("timed_events")
@@ -610,6 +615,7 @@ model Room {
   charactersHere  Character[]  @relation("CharacterCurrentRoom")
   dilemmaPoints   DilemmaPoint[]
   timedEvents     TimedEvent[]
+  puzzles         Puzzle[]
 
   @@unique([storyId, x, y, z])
   @@map("rooms")
@@ -759,5 +765,112 @@ model DilemmaPoint {
   story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
   room            Room?    @relation(fields: [roomId], references: [id])
 
+  // Puzzles that lead to this dilemma
+  leadingPuzzles Puzzle[]
+
   @@map("dilemma_points")
+}
+
+// ============================================
+// PUZZLE SYSTEM - Multi-step objectives with flowchart chains
+// ============================================
+
+model Puzzle {
+  id              String       @id @default(uuid())
+  storyId         String       @map("story_id")
+  roomId          String?      @map("room_id") // Primary room where puzzle begins
+
+  // Basic info
+  name            String
+  description     String       // What the puzzle is about
+
+  // State tracking
+  status          PuzzleStatus @default(pending)
+  startedAt       DateTime?    @map("started_at")
+  completedAt     DateTime?    @map("completed_at")
+
+  // Reward for completion
+  rewardType      String?      @map("reward_type") // "item", "skill_boost", "dilemma", "secret_reveal", "room_unlock"
+  rewardData      Json         @default("{}") @map("reward_data")
+
+  // Display in sidebar
+  isActive        Boolean      @default(false) @map("is_active") // Shows in objectives when true
+  displayOrder    Int          @default(0) @map("display_order")
+
+  // Link to dilemma (puzzle can lead to a dilemma)
+  targetDilemmaId String?      @map("target_dilemma_id")
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  story           Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  room            Room?        @relation(fields: [roomId], references: [id])
+  steps           PuzzleStep[]
+  targetDilemma   DilemmaPoint? @relation(fields: [targetDilemmaId], references: [id])
+
+  // Flowchart connections
+  incomingLinks   PuzzleLink[] @relation("PuzzleTarget")
+  outgoingLinks   PuzzleLink[] @relation("PuzzleSource")
+
+  @@map("puzzles")
+}
+
+enum PuzzleStatus {
+  pending      // Not yet discovered/started
+  active       // Player is working on it
+  completed    // Successfully finished
+  failed       // Timed out or blocked
+}
+
+model PuzzleStep {
+  id              String    @id @default(uuid())
+  puzzleId        String    @map("puzzle_id")
+
+  // Step details
+  stepNumber      Int       @map("step_number")
+  description     String    // What player needs to do
+  hint            String?   // Optional hint if stuck
+
+  // Completion requirements (JSON for flexibility)
+  requirements    Json      @default("{}") // { requiredItems: [], requiredActions: [], requiredRoom: null }
+
+  // State
+  isCompleted     Boolean   @default(false) @map("is_completed")
+  completedAt     DateTime? @map("completed_at")
+
+  // Optional timed urgency
+  timedEventId    String?   @map("timed_event_id")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  puzzle          Puzzle    @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
+  timedEvent      TimedEvent? @relation(fields: [timedEventId], references: [id])
+
+  @@unique([puzzleId, stepNumber])
+  @@map("puzzle_steps")
+}
+
+// Flowchart connections between puzzles
+model PuzzleLink {
+  id              String         @id @default(uuid())
+
+  sourcePuzzleId  String         @map("source_puzzle_id")
+  targetPuzzleId  String         @map("target_puzzle_id")
+
+  // Link type
+  linkType        PuzzleLinkType @default(sequential) @map("link_type")
+  condition       String?        // Optional condition text for conditional links
+
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  sourcePuzzle    Puzzle         @relation("PuzzleSource", fields: [sourcePuzzleId], references: [id], onDelete: Cascade)
+  targetPuzzle    Puzzle         @relation("PuzzleTarget", fields: [targetPuzzleId], references: [id], onDelete: Cascade)
+
+  @@unique([sourcePuzzleId, targetPuzzleId])
+  @@map("puzzle_links")
+}
+
+enum PuzzleLinkType {
+  sequential   // Complete source to unlock target
+  parallel     // Both available at same time
+  conditional  // Target unlocks based on condition
 }

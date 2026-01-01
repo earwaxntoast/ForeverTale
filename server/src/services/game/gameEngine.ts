@@ -4,6 +4,7 @@ import * as objectService from './objectService';
 import * as commandParser from './commandParser';
 import { generateDilemma } from '../ai/gameAI';
 import * as timedEventService from './timedEventService';
+import * as puzzleService from './puzzleService';
 
 const prisma = new PrismaClient();
 
@@ -163,6 +164,20 @@ export async function processTurn(
     await recordPersonalityEvent(storyId, playerInput, result.personalitySignal);
   }
 
+  // Check for puzzle step completion
+  const inventory = await prisma.gameObject.findMany({
+    where: { storyId, roomId: null },
+    select: { name: true },
+  });
+  const inventoryNames = inventory.map(i => i.name);
+
+  const puzzleResult = await puzzleService.checkPuzzleStepCompletion(
+    storyId,
+    playerInput,
+    currentRoom.id,
+    inventoryNames
+  );
+
   // Tick all active timed events
   const tickResults = await timedEventService.tickEvents(storyId, currentRoom.id);
   const tickNarrative = timedEventService.formatTickResults(tickResults);
@@ -198,8 +213,14 @@ export async function processTurn(
     );
   }
 
-  // Build narrative with timed event info appended
+  // Build narrative with puzzle and timed event info appended
   let finalNarrative = result.response;
+
+  // Add puzzle completion narratives
+  if (puzzleResult.narratives.length > 0) {
+    finalNarrative += '\n\n' + puzzleResult.narratives.join('\n');
+  }
+
   if (tickNarrative) {
     finalNarrative += '\n\n' + tickNarrative;
   }

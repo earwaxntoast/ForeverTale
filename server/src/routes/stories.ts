@@ -6,13 +6,22 @@ import * as gameEngine from '../services/game/gameEngine.js';
 import * as roomService from '../services/game/roomService.js';
 import * as objectService from '../services/game/objectService.js';
 import * as skillService from '../services/game/skillService.js';
+import * as puzzleService from '../services/game/puzzleService.js';
+import {
+  StoryGenerationOrchestrator,
+  persistGeneratedStory,
+  GenerationProgress,
+} from '../services/ai/storyGeneration/index.js';
+
+// Store for SSE progress emitters
+const progressEmitters = new Map<string, (progress: GenerationProgress) => void>();
 
 const router = Router();
 
-// Create a new story from interview data
+// Create a new story from interview data (multi-step generation)
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { playerName, interviewExchanges } = req.body;
+    const { playerName, interviewExchanges, storyPreference } = req.body;
 
     if (!playerName || !interviewExchanges) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -20,13 +29,6 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Extract themes from interview
     const themes = extractThemesSimple(interviewExchanges);
-
-    // Generate story seed using Claude
-    const storySeed = await generateStorySeed({
-      playerName,
-      interviewExchanges,
-      extractedThemes: themes,
-    });
 
     // For now, use a mock user ID (auth comes later)
     const mockUserId = 'mock-user-' + Date.now();
@@ -62,157 +64,80 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    // Create the story
+    // Create the story record first (placeholder, will be filled by orchestrator)
     const story = await prisma.story.create({
       data: {
         userId: user.id,
-        title: storySeed.title,
+        title: 'Generating...', // Will be updated by orchestrator
         status: 'in_progress',
-        genreTags: storySeed.genreBlend,
+        genreTags: [],
         initialInterview: interviewExchanges,
-        storySeed: storySeed as object,
       },
     });
 
-    // Create first chapter
-    const chapter = await prisma.chapter.create({
-      data: {
-        storyId: story.id,
-        chapterNumber: 1,
-        title: 'The Beginning',
-      },
-    });
+    // Create the multi-step story generator
+    const orchestrator = new StoryGenerationOrchestrator(
+      story.id,
+      playerName,
+      interviewExchanges,
+      themes,
+      storyPreference // Player's preferred story type (fantasy, sci-fi, etc.)
+    );
 
-    // Update story with current chapter
-    await prisma.story.update({
-      where: { id: story.id },
-      data: { currentChapterId: chapter.id },
-    });
-
-    // Create initial characters from story seed
-    for (const char of storySeed.initialCharacters) {
-      await prisma.character.create({
-        data: {
-          storyId: story.id,
-          name: char.name,
-          description: char.role,
-          personalityTraits: { traits: char.traits },
-          isMajorCharacter: true,
-        },
-      });
-    }
-
-    // Create character backstory from story seed
-    if (storySeed.characterBackstory) {
-      await prisma.characterBackstory.create({
-        data: {
-          storyId: story.id,
-          name: playerName,
-          background: storySeed.characterBackstory.background,
-          traits: storySeed.characterBackstory.traits || [],
-          isRevealed: !storySeed.characterBackstory.isSecretBackstory,
-        },
-      });
-    }
-
-    // Create starting abilities from story seed
-    if (storySeed.startingSkills && storySeed.startingSkills.length > 0) {
-      await skillService.createStartingAbilities(
-        story.id,
-        storySeed.startingSkills.map(skill => ({
-          name: skill.name,
-          level: skill.level,
-          verbs: skill.triggerVerbs,
-        }))
-      );
-    }
-
-    // Create secret facts from story seed
-    if (storySeed.secretFacts && storySeed.secretFacts.length > 0) {
-      for (const fact of storySeed.secretFacts) {
-        await prisma.storyFact.create({
-          data: {
-            storyId: story.id,
-            content: fact.content,
-            factType: 'SECRET',
-            source: 'story_seed',
-            importance: 8, // High importance for secrets
-            isSecret: true,
-            isRevealed: false,
-            deflectionHint: fact.deflectionHint,
-            revealTrigger: fact.revealTrigger,
-            topics: fact.topics || [],
-          },
-        });
+    // Set up progress emitter for SSE clients
+    orchestrator.on('progress', (progress: GenerationProgress) => {
+      const emitter = progressEmitters.get(story.id);
+      if (emitter) {
+        emitter(progress);
       }
-    }
-
-    // Initialize the game world
-    const gameState = await gameEngine.initializeGame(story.id, {
-      startingRoom: {
-        name: storySeed.startingLocation?.name || 'The Beginning',
-        description: storySeed.openingScenario,
-        atmosphere: {
-          mood: storySeed.tone || 'mysterious',
-          lighting: 'dim',
-        },
-      },
-      initialObjects: storySeed.startingItems || [],
     });
 
-    // Create initial rooms based on story seed (if map layout provided)
-    if (storySeed.initialMap) {
-      await createInitialMap(story.id, storySeed.initialMap, gameState.currentRoom.id);
-    }
+    // Generate all story data through the 10 steps
+    const allData = await orchestrator.generate();
 
-    // Create planned dilemmas from story seed
-    if (storySeed.plannedDilemmas) {
-      for (const dilemma of storySeed.plannedDilemmas) {
-        await prisma.dilemmaPoint.create({
-          data: {
-            storyId: story.id,
-            name: dilemma.name,
-            description: dilemma.description,
-            primaryDimension: dilemma.primaryDimension,
-            secondaryDimension: dilemma.secondaryDimension,
-            optionA: dilemma.optionA,
-            optionB: dilemma.optionB,
-            optionC: dilemma.optionC,
-          },
-        });
-      }
-    }
+    // Persist all generated data to the database
+    await persistGeneratedStory(story.id, playerName, allData);
 
-    // Generate opening scene record
-    const openingScene = await prisma.scene.create({
-      data: {
-        chapterId: chapter.id,
-        sceneNumber: 1,
-        sceneType: 'exploration',
-        narrativeText: storySeed.openingScenario,
-        aiProvider: 'claude',
-      },
-    });
-
-    // Update story with current scene
-    await prisma.story.update({
-      where: { id: story.id },
-      data: { currentSceneId: openingScene.id },
-    });
-
-    // Get the formatted opening narrative
-    const openingNarrative = await gameEngine.getOpeningNarrative(story.id);
-
+    // Return the story info
     return res.json({
       storyId: story.id,
-      title: storySeed.title,
-      openingScene: openingNarrative,
-      storySeed,
+      title: allData.identity.title,
+      openingScene: allData.opening.openingNarrative,
+      storySeed: allData,
     });
   } catch (error) {
     console.error('Create story error:', error);
     return res.status(500).json({ error: 'Failed to create story' });
   }
+});
+
+// SSE endpoint for generation progress
+router.get('/:id/generation-progress', async (req: Request, res: Response) => {
+  const storyId = req.params.id;
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // For nginx
+
+  // Send initial connection message
+  res.write(`data: ${JSON.stringify({ connected: true, storyId })}\n\n`);
+
+  // Store the emitter for this story
+  progressEmitters.set(storyId, (progress: GenerationProgress) => {
+    res.write(`data: ${JSON.stringify(progress)}\n\n`);
+
+    // If complete, clean up
+    if (progress.isComplete) {
+      progressEmitters.delete(storyId);
+    }
+  });
+
+  // Handle client disconnect
+  req.on('close', () => {
+    progressEmitters.delete(storyId);
+  });
 });
 
 // Get story details
@@ -460,6 +385,9 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
       },
     }));
 
+    // Get active objectives from puzzles
+    const objectives = await puzzleService.getObjectives(storyId);
+
     return res.json({
       character: {
         name: playerName,
@@ -482,6 +410,15 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
         id: item.id,
         name: item.name,
         description: item.description,
+      })),
+      objectives: objectives.map(obj => ({
+        id: obj.id,
+        name: obj.name,
+        description: obj.description,
+        steps: obj.steps.map(step => ({
+          description: step.description,
+          completed: step.isCompleted,
+        })),
       })),
       map: mapData,
       currentRoomId: playerState?.currentRoomId,

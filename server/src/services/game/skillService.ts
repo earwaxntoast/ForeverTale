@@ -33,6 +33,31 @@ export const DEFAULT_SKILL_VERBS: Record<string, string[]> = {
   'Pickpocket': ['pickpocket', 'steal', 'lift', 'swipe', 'filch'],
 };
 
+// Default noun-to-skill mappings (objects that trigger skills)
+export const DEFAULT_SKILL_NOUNS: Record<string, string[]> = {
+  // Navigation & Exploration
+  'Cartography': ['map', 'compass', 'sextant', 'charts', 'globe', 'atlas'],
+  'Piloting': ['wheel', 'rudder', 'helm', 'cockpit', 'controls', 'throttle'],
+
+  // Technical
+  'Hacking': ['terminal', 'console', 'computer', 'keyboard', 'screen', 'server', 'laptop'],
+  'Mechanics': ['engine', 'machine', 'gears', 'motor', 'circuit', 'wires', 'tools', 'wrench'],
+  'Lockpicking': ['lock', 'padlock', 'keyhole', 'mechanism', 'tumbler', 'deadbolt'],
+
+  // Medical
+  'Medicine': ['bandage', 'medicine', 'herbs', 'poultice', 'syringe', 'medkit', 'wound'],
+
+  // Combat
+  'Combat': ['sword', 'weapon', 'blade', 'gun', 'bow', 'shield', 'armor'],
+
+  // Knowledge & Investigation
+  'Knowledge': ['book', 'tome', 'manuscript', 'scroll', 'inscription', 'runes'],
+  'Investigation': ['clue', 'evidence', 'footprint', 'fingerprint', 'document'],
+
+  // Performance
+  'Performance': ['instrument', 'guitar', 'piano', 'violin', 'flute', 'drum', 'stage'],
+};
+
 // Difficulty scale reference
 export const DIFFICULTY_SCALE = {
   TRIVIAL: 5,      // Anyone can do this
@@ -224,7 +249,16 @@ export async function performSkillCheck(
  * Find which skill a verb triggers - checks player's abilities first, then defaults
  */
 export async function findSkillForVerb(verb: string, storyId?: string): Promise<string | null> {
-  const normalizedVerb = verb.toLowerCase();
+  return findSkillForInput(verb, storyId);
+}
+
+/**
+ * Find which skill matches the input - checks both verbs and nouns
+ * This is the main function that should be used for skill matching
+ */
+export async function findSkillForInput(input: string, storyId?: string): Promise<string | null> {
+  const normalizedInput = input.toLowerCase();
+  const words = normalizedInput.split(/\s+/);
 
   // If we have a storyId, check player's actual abilities first
   if (storyId) {
@@ -234,25 +268,42 @@ export async function findSkillForVerb(verb: string, storyId?: string): Promise<
 
     for (const ability of playerAbilities) {
       const triggerVerbs = ability.triggerVerbs as string[] || [];
+      const triggerNouns = ability.triggerNouns as string[] || [];
 
-      // Check if any trigger verb matches (case-insensitive, partial match)
+      // Check trigger verbs
       for (const triggerVerb of triggerVerbs) {
         const normalizedTrigger = triggerVerb.toLowerCase();
-        // Match if verb equals trigger OR verb contains trigger OR trigger contains verb
-        if (normalizedVerb === normalizedTrigger ||
-            normalizedVerb.includes(normalizedTrigger) ||
-            normalizedTrigger.includes(normalizedVerb)) {
-          return ability.name;
+        // Match if any word equals trigger OR contains trigger OR trigger contains word
+        for (const word of words) {
+          if (word === normalizedTrigger ||
+              word.includes(normalizedTrigger) ||
+              normalizedTrigger.includes(word)) {
+            return ability.name;
+          }
         }
       }
 
-      // Also check if the verb matches part of the skill name itself
+      // Check trigger nouns
+      for (const triggerNoun of triggerNouns) {
+        const normalizedTrigger = triggerNoun.toLowerCase();
+        for (const word of words) {
+          if (word === normalizedTrigger ||
+              word.includes(normalizedTrigger) ||
+              normalizedTrigger.includes(word)) {
+            return ability.name;
+          }
+        }
+      }
+
+      // Also check if any word matches part of the skill name itself
       // e.g., "maintain" should match "Lighthouse Maintenance"
       const skillNameLower = ability.name.toLowerCase();
       const skillWords = skillNameLower.split(/\s+/);
-      for (const word of skillWords) {
-        if (word.startsWith(normalizedVerb) || normalizedVerb.startsWith(word)) {
-          return ability.name;
+      for (const skillWord of skillWords) {
+        for (const inputWord of words) {
+          if (skillWord.startsWith(inputWord) || inputWord.startsWith(skillWord)) {
+            return ability.name;
+          }
         }
       }
     }
@@ -260,8 +311,19 @@ export async function findSkillForVerb(verb: string, storyId?: string): Promise<
 
   // Fall back to default skill verbs
   for (const [skill, verbs] of Object.entries(DEFAULT_SKILL_VERBS)) {
-    if (verbs.includes(normalizedVerb)) {
-      return skill;
+    for (const word of words) {
+      if (verbs.includes(word)) {
+        return skill;
+      }
+    }
+  }
+
+  // Fall back to default skill nouns
+  for (const [skill, nouns] of Object.entries(DEFAULT_SKILL_NOUNS)) {
+    for (const word of words) {
+      if (nouns.includes(word)) {
+        return skill;
+      }
     }
   }
 
@@ -295,13 +357,14 @@ export async function getAbility(storyId: string, name: string): Promise<PlayerA
  */
 export async function createStartingAbilities(
   storyId: string,
-  abilities: Array<{ name: string; level: number; verbs?: string[] }>
+  abilities: Array<{ name: string; level: number; verbs?: string[]; nouns?: string[] }>
 ): Promise<PlayerAbility[]> {
   const created: PlayerAbility[] = [];
 
   for (const ability of abilities) {
     const normalizedName = ability.name.charAt(0).toUpperCase() + ability.name.slice(1).toLowerCase();
     const triggerVerbs = ability.verbs || DEFAULT_SKILL_VERBS[normalizedName] || [];
+    const triggerNouns = ability.nouns || DEFAULT_SKILL_NOUNS[normalizedName] || [];
 
     const created_ability = await prisma.playerAbility.create({
       data: {
@@ -310,6 +373,7 @@ export async function createStartingAbilities(
         level: ability.level,
         origin: 'backstory',
         triggerVerbs,
+        triggerNouns,
       },
     });
 
