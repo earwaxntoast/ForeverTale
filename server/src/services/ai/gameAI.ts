@@ -241,11 +241,11 @@ Respond in JSON format:
   "failureNarrative": "What happens if the skill check fails (2-3 sentences)"` : ''}
 }
 
-If the command doesn't make sense, provide a helpful response guiding the player.
+If the command doesn't make sense in context of the game, provide a helpful response guiding the player.
 If the action reveals something about the player's personality (risk-taking, helpfulness, curiosity, etc.), include the personalitySignal.`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-opus-4-5-20251101',
     max_tokens: 600,
     messages: [{ role: 'user', content: prompt }],
   });
