@@ -12,6 +12,8 @@ export async function persistGeneratedStory(
   playerName: string,
   data: AllStepData
 ): Promise<void> {
+  // Use a longer timeout for the transaction - we're creating many records
+  // (30+ rooms, 45+ puzzles with steps, characters, dilemmas, etc.)
   await prisma.$transaction(async (tx) => {
     // Maps to track created entity IDs
     const roomIdMap = new Map<string, string>();
@@ -375,6 +377,8 @@ export async function persistGeneratedStory(
         currentChapterId: chapter.id,
       },
     });
+  }, {
+    timeout: 120000, // 2 minutes - needed for creating many records
   });
 }
 

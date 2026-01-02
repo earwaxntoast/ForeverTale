@@ -316,7 +316,7 @@ Return ONLY valid JSON:
 
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 10000,
+    max_tokens: 50000, // Very large response with full descriptions for 15-30 rooms
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -589,7 +589,7 @@ Return ONLY valid JSON:
 
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 10000,
+    max_tokens: 50000, // Very large response with 3 puzzles per room (45-90 puzzles total)
     messages: [{ role: 'user', content: prompt }],
   });
 

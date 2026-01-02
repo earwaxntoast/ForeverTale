@@ -11,6 +11,13 @@ import * as steps from './steps.js';
 
 const prisma = new PrismaClient();
 
+// Helper to format duration
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = (ms / 1000).toFixed(1);
+  return `${seconds}s`;
+}
+
 // Step function type
 type StepFunction = (context: GenerationContext) => Promise<unknown>;
 
@@ -64,6 +71,14 @@ export class StoryGenerationOrchestrator extends EventEmitter {
    * Generate the full story through all steps
    */
   async generate(): Promise<AllStepData> {
+    const totalStartTime = Date.now();
+    console.log('\n========================================');
+    console.log('STORY GENERATION STARTING');
+    console.log(`Story ID: ${this.context.storyId}`);
+    console.log(`Player: ${this.context.playerName}`);
+    console.log(`Total steps: ${GENERATION_STEPS.length}`);
+    console.log('========================================\n');
+
     for (let i = 0; i < GENERATION_STEPS.length; i++) {
       if (this.aborted) {
         throw new Error('Generation aborted');
@@ -71,6 +86,11 @@ export class StoryGenerationOrchestrator extends EventEmitter {
 
       const stepConfig = GENERATION_STEPS[i];
       const stepFn = STEP_FUNCTIONS[stepConfig.name];
+      const stepStartTime = Date.now();
+
+      // Log step start
+      console.log(`[Step ${i + 1}/${GENERATION_STEPS.length}] Starting: ${stepConfig.name}`);
+      console.log(`  Description: ${stepConfig.description}`);
 
       // Emit progress at start of step
       this.emitProgress(stepConfig.name, i + 1, false);
@@ -83,6 +103,9 @@ export class StoryGenerationOrchestrator extends EventEmitter {
           stepConfig.maxRetries
         );
 
+        const stepDuration = Date.now() - stepStartTime;
+        console.log(`[Step ${i + 1}/${GENERATION_STEPS.length}] Completed: ${stepConfig.name} (${formatDuration(stepDuration)})`);
+
         // Store result in context
         (this.context.stepData as Record<string, unknown>)[stepConfig.name] = result;
         this.context.completedSteps.push(stepConfig.name);
@@ -91,11 +114,19 @@ export class StoryGenerationOrchestrator extends EventEmitter {
         await this.persistStepResult(stepConfig.name, result);
 
       } catch (error) {
+        const stepDuration = Date.now() - stepStartTime;
+        console.error(`[Step ${i + 1}/${GENERATION_STEPS.length}] FAILED: ${stepConfig.name} after ${formatDuration(stepDuration)}`);
         console.error(`Step ${stepConfig.name} failed:`, error);
         this.emit('error', { step: stepConfig.name, error });
         throw error;
       }
     }
+
+    const totalDuration = Date.now() - totalStartTime;
+    console.log('\n========================================');
+    console.log('STORY GENERATION COMPLETE');
+    console.log(`Total time: ${formatDuration(totalDuration)}`);
+    console.log('========================================\n');
 
     // Emit final completion
     this.emitProgress('opening', GENERATION_STEPS.length, true);

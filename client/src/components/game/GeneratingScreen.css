@@ -1,0 +1,120 @@
+/* Generating Screen Styles */
+.generating-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: 2rem;
+}
+
+.generating-content {
+  max-width: 600px;
+  width: 100%;
+}
+
+.generating-title {
+  font-size: 1.8rem;
+  letter-spacing: 0.15em;
+  margin-bottom: 2rem;
+  color: var(--color-primary);
+  text-transform: uppercase;
+}
+
+/* Progress Bar */
+.progress-container {
+  margin: 2rem 0;
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--color-background-secondary, rgba(0, 255, 0, 0.1));
+  border: 1px solid var(--color-primary, #0f0);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-primary, #0f0);
+  transition: width 0.5s ease-out;
+  box-shadow: 0 0 10px var(--color-primary, #0f0);
+}
+
+.progress-text {
+  font-size: 0.9rem;
+  opacity: 0.7;
+  font-family: monospace;
+}
+
+/* Step Info */
+.step-info {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  border: 1px solid var(--color-border, rgba(0, 255, 0, 0.3));
+  border-radius: 4px;
+  background: var(--color-background-secondary, rgba(0, 0, 0, 0.3));
+}
+
+.step-title {
+  font-size: 1.2rem;
+  margin-bottom: 0.75rem;
+  color: var(--color-primary, #0f0);
+  letter-spacing: 0.1em;
+}
+
+.step-description {
+  font-size: 1rem;
+  line-height: 1.6;
+  opacity: 0.8;
+  font-style: italic;
+}
+
+/* Completion */
+.completion-text {
+  margin-top: 1.5rem;
+  font-size: 1.1rem;
+  color: var(--color-primary, #0f0);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Error State */
+.generating-error {
+  text-align: center;
+}
+
+.error-title {
+  font-size: 1.4rem;
+  color: var(--color-error, #f44);
+  margin-bottom: 1rem;
+}
+
+.error-message {
+  font-size: 0.9rem;
+  opacity: 0.7;
+  margin-bottom: 2rem;
+  font-family: monospace;
+}
+
+.retry-button {
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: 1px solid var(--color-primary, #0f0);
+  color: var(--color-primary, #0f0);
+  font-family: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-button:hover {
+  background: var(--color-primary, #0f0);
+  color: var(--color-background, #000);
+}

@@ -3,6 +3,7 @@ import { useGameStore } from './store/gameStore';
 import TitleScreen from './components/game/TitleScreen';
 import BootSequence from './components/game/BootSequence';
 import InterviewScreen from './components/interview/InterviewScreen';
+import GeneratingScreen from './components/game/GeneratingScreen';
 import GameScreen from './components/game/GameScreen';
 import AnalysisScreen from './components/analysis/AnalysisScreen';
 import { AdminPanel } from './components/admin/AdminPanel';
@@ -62,15 +63,6 @@ function App() {
         </div>
       </CRTScreen>
     </>
-  );
-}
-
-function GeneratingScreen() {
-  return (
-    <div className="generating-screen">
-      <p className="dim">Weaving the threads of your destiny...</p>
-      <p className="loading">Generating story</p>
-    </div>
   );
 }
 

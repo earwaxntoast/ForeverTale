@@ -75,7 +75,13 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
-    // Create the multi-step story generator
+    // Return the storyId immediately so client can connect to SSE for progress
+    res.json({
+      storyId: story.id,
+      status: 'generating',
+    });
+
+    // Create the multi-step story generator (runs in background after response sent)
     const orchestrator = new StoryGenerationOrchestrator(
       story.id,
       playerName,
@@ -92,19 +98,54 @@ router.post('/', async (req: Request, res: Response) => {
       }
     });
 
-    // Generate all story data through the 10 steps
-    const allData = await orchestrator.generate();
+    // Generate all story data through the 10 steps (runs after response sent)
+    try {
+      const allData = await orchestrator.generate();
 
-    // Persist all generated data to the database
-    await persistGeneratedStory(story.id, playerName, allData);
+      // Persist all generated data to the database
+      await persistGeneratedStory(story.id, playerName, allData);
 
-    // Return the story info
-    return res.json({
-      storyId: story.id,
-      title: allData.identity.title,
-      openingScene: allData.opening.openingNarrative,
-      storySeed: allData,
-    });
+      // Update story status to indicate completion
+      await prisma.story.update({
+        where: { id: story.id },
+        data: { status: 'completed' },
+      });
+
+      // Emit final completion event
+      const emitter = progressEmitters.get(story.id);
+      if (emitter) {
+        emitter({
+          currentStep: 'opening',
+          stepNumber: 10,
+          totalSteps: 10,
+          stepDescription: 'Complete',
+          themedNarrative: 'Your story awaits...',
+          isComplete: true,
+        });
+      }
+    } catch (genError) {
+      console.error('Background story generation error:', genError);
+      // Emit error event
+      const emitter = progressEmitters.get(story.id);
+      if (emitter) {
+        emitter({
+          currentStep: 'identity',
+          stepNumber: 0,
+          totalSteps: 10,
+          stepDescription: 'Failed',
+          themedNarrative: 'The threads of fate have tangled...',
+          isComplete: false,
+          error: genError instanceof Error ? genError.message : 'Generation failed',
+        });
+      }
+      // Update story status to indicate failure
+      await prisma.story.update({
+        where: { id: story.id },
+        data: { status: 'abandoned' },
+      });
+    }
+
+    return; // Response already sent
   } catch (error) {
     console.error('Create story error:', error);
     return res.status(500).json({ error: 'Failed to create story' });

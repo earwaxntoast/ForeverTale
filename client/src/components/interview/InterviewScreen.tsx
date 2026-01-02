@@ -127,7 +127,7 @@ export default function InterviewScreen() {
           `${name}. Now the conversation truly begins. Life offers rare moments of pure existence. When do you feel most completely alive?`,
           `${name}. A name is a kind of promise. The sacred means different things to each soul. What does the word spirituality mean to you?`,
           `${name}. So you've told me. The future is a canvas we paint with intention. In ten years, what life do you imagine for yourself?`,
-          `${name}. It resonates between us. Success wears many faces. How do you measure a life well-lived?`,
+          `${name}. It resonates between us. Success wears many faces, ${name}. How do you measure a life well-lived?`,
           `${name}. The first of many revelations. Freedom is the deepest human longing. When do you feel the most free?`,
           `${name}. I hold the name carefully. The question of destiny divides us all. Do you believe in the design of fate?`,
           `${name}. So you are known. Identity is the puzzle we spend our lives solving. What defines the core of who you are?`,
@@ -234,19 +234,18 @@ export default function InterviewScreen() {
     storyPreference?: string
   ) => {
     try {
-      setLoadingMessage('Weaving narrative threads');
-
+      // Start story generation - returns immediately with storyId
       const result = await apiClient.generateStory({
         playerName: name,
         interviewExchanges: exchanges,
         storyPreference,
       });
 
-      // Store the story ID
+      // Store the story ID immediately - GeneratingScreen will connect to SSE
       setCurrentStoryId(result.storyId);
 
-      // Story generated - transition to playing
-      setScreen('playing');
+      // Screen was already set to 'generating_story' before this function was called
+      // GeneratingScreen will handle progress tracking and transition to 'playing'
     } catch (error) {
       console.error('Story generation error:', error);
       // Show error message
@@ -257,6 +256,7 @@ export default function InterviewScreen() {
       });
       setLoading(false);
       setInputEnabled(true);
+      setScreen('interview'); // Go back to interview on error
     }
   };
 

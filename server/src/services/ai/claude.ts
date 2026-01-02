@@ -36,7 +36,7 @@ BANNED:
 - Multiple questions in one response
 - More than 60 words
 
-QUESTION ARCHETYPES (rotate through these, don't repeat the same type consecutively):
+QUESTION ARCHETYPES (rotate through these, don't repeat the same type consecutively, but don't just use them for the sake of using them. These are your tools. Ask them when it makes sense, ask them when it helps to pull the conversation along. Don't contradict the player. Don't tell them 'you said this, but you really mean this' Take what they say as true, unless it's a clear and obvious lie):
 
 1. THE HYPOTHETICAL - Place them in an imagined scenario
    "A door appears that wasn't there before. You know you shouldn't open it. Do you?"
@@ -133,7 +133,8 @@ export async function conductInterview(context: InterviewContext): Promise<Inter
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      //model: 'claude-sonnet-4-20250514',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: 300,
       system: systemPrompt,
       messages,
@@ -378,7 +379,8 @@ export async function generateStorySeed(context: StorySeedContext): Promise<Stor
     logger.debug('StorySeed', 'Calling Claude API for story seed generation');
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      //model: 'claude-sonnet-4-20250514',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: 4000,
       system: STORY_SEED_PROMPT,
       messages: [
