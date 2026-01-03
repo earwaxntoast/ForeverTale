@@ -2,6 +2,12 @@ import { useEffect, useState, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import './GeneratingScreen.css';
 
+interface SubProgress {
+  current: number;
+  total: number;
+  label: string;
+}
+
 interface GenerationProgress {
   currentStep: string;
   stepNumber: number;
@@ -10,6 +16,8 @@ interface GenerationProgress {
   themedNarrative: string;
   isComplete: boolean;
   error?: string;
+  subProgress?: SubProgress;
+  logMessages?: string[];
 }
 
 // Step narratives for display
@@ -59,9 +67,11 @@ const STEP_NARRATIVES: Record<string, { title: string; description: string }> = 
 export default function GeneratingScreen() {
   const { currentStoryId, setScreen } = useGameStore();
   const [progress, setProgress] = useState<GenerationProgress | null>(null);
+  const [logMessages, setLogMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const hasConnectedRef = useRef(false);
+  const logContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Don't connect if no storyId yet or already connected
@@ -82,13 +92,18 @@ export default function GeneratingScreen() {
 
         setProgress(data);
 
+        // Update log messages if provided
+        if (data.logMessages && data.logMessages.length > 0) {
+          setLogMessages(data.logMessages);
+        }
+
         // Check for completion
         if (data.isComplete) {
           eventSource.close();
           // Small delay before transitioning to let user see completion
           setTimeout(() => {
             setScreen('playing');
-          }, 1500);
+          }, 2000);
         }
 
         // Check for error
@@ -110,6 +125,13 @@ export default function GeneratingScreen() {
       eventSource.close();
     };
   }, [currentStoryId, setScreen]);
+
+  // Auto-scroll log container
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logMessages]);
 
   // Calculate progress percentage
   const progressPercent = progress
@@ -143,6 +165,7 @@ export default function GeneratingScreen() {
       <div className="generating-content">
         <h2 className="generating-title">Crafting Your Story</h2>
 
+        {/* Main progress bar */}
         <div className="progress-container">
           <div className="progress-bar">
             <div
@@ -151,14 +174,53 @@ export default function GeneratingScreen() {
             />
           </div>
           <div className="progress-text">
-            {progress ? `${progress.stepNumber} / ${progress.totalSteps}` : '...'}
+            {progress ? `Step ${progress.stepNumber} of ${progress.totalSteps}` : 'Initializing...'}
           </div>
         </div>
 
+        {/* Step info */}
         <div className="step-info">
           <h3 className="step-title">{currentNarrative.title}</h3>
           <p className="step-description">{currentNarrative.description}</p>
         </div>
+
+        {/* Activity indicator bar */}
+        <div className="activity-container">
+          <div className="activity-bar">
+            <div className="activity-pulse" />
+          </div>
+        </div>
+
+        {/* Boot-up log messages */}
+        <div className="log-container" ref={logContainerRef}>
+          {logMessages.length === 0 ? (
+            <div className="log-entry">[ OK ] Initializing story generation systems...</div>
+          ) : (
+            logMessages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`log-entry ${msg.includes('[DONE]') ? 'log-done' : ''} ${msg.includes('[BOOT]') ? 'log-boot' : ''}`}
+              >
+                {msg}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Sub-progress if available */}
+        {progress?.subProgress && (
+          <div className="sub-progress-container">
+            <div className="sub-progress-bar">
+              <div
+                className="sub-progress-fill"
+                style={{ width: `${(progress.subProgress.current / progress.subProgress.total) * 100}%` }}
+              />
+            </div>
+            <div className="sub-progress-text">
+              {progress.subProgress.label}: {progress.subProgress.current} / {progress.subProgress.total}
+            </div>
+          </div>
+        )}
 
         {progress?.isComplete && (
           <p className="completion-text">Your story awaits...</p>

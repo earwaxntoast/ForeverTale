@@ -1,7 +1,10 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import Anthropic from '@anthropic-ai/sdk';
 import { AllStepData, EnhancedRoomData, PuzzleData, PuzzleChainLink } from './types.js';
 
 const prisma = new PrismaClient();
+const anthropic = new Anthropic();
+const FAST_MODEL = 'claude-3-5-haiku-20241022';
 
 /**
  * Persist all generated story data to the database
@@ -34,7 +37,15 @@ export async function persistGeneratedStory(
     // ============================================
     // 2. Create Rooms from connectingAreas
     // ============================================
+    // Track vehicle rooms for post-processing (setting docked location and destinations)
+    const vehicleRooms: Array<{ room: EnhancedRoomData; dbId: string }> = [];
+
     for (const room of data.connectingAreas.rooms) {
+      // Collect hidden exits from connection descriptions
+      const hiddenExits = room.connectionDescriptions
+        .filter(conn => conn.isHidden)
+        .map(conn => conn.direction);
+
       const created = await tx.room.create({
         data: {
           storyId,
@@ -46,9 +57,20 @@ export async function persistGeneratedStory(
           z: room.z,
           isStoryCritical: room.isStoryCritical,
           atmosphere: room.suggestedAtmosphere as Prisma.InputJsonValue,
+          hiddenExits: hiddenExits as Prisma.InputJsonValue,
+          discoveredExits: [] as Prisma.InputJsonValue, // Empty initially
+          // Vehicle properties
+          isVehicle: room.isVehicle || false,
+          vehicleType: room.vehicleType || null,
+          boardingKeywords: (room.boardingKeywords || []) as Prisma.InputJsonValue,
         },
       });
       roomIdMap.set(room.name, created.id);
+
+      // Track vehicles for post-processing
+      if (room.isVehicle) {
+        vehicleRooms.push({ room, dbId: created.id });
+      }
 
       // Create objects in room
       for (const obj of room.objects) {
@@ -58,12 +80,35 @@ export async function persistGeneratedStory(
             roomId: created.id,
             name: obj.name,
             description: obj.description,
+            synonyms: (obj.synonyms || []) as Prisma.InputJsonValue,
             isTakeable: obj.isTakeable,
             isStoryCritical: obj.isStoryCritical || false,
-            state: obj.initialState as Prisma.InputJsonValue || {},
+            state: (obj.initialState || {}) as Prisma.InputJsonValue,
           },
         });
       }
+    }
+
+    // ============================================
+    // 2b. Set vehicle docking locations and destinations
+    // ============================================
+    for (const { room, dbId } of vehicleRooms) {
+      const dockedAtRoomId = room.dockedAtRoomName
+        ? roomIdMap.get(room.dockedAtRoomName) || null
+        : null;
+
+      // Convert destination room names to IDs
+      const knownDestinations = (room.knownDestinationRoomNames || [])
+        .map(name => roomIdMap.get(name))
+        .filter((id): id is string => !!id);
+
+      await tx.room.update({
+        where: { id: dbId },
+        data: {
+          dockedAtRoomId,
+          knownDestinations: knownDestinations as Prisma.InputJsonValue,
+        },
+      });
     }
 
     // ============================================
@@ -165,6 +210,8 @@ export async function persistGeneratedStory(
           rewardData: puzzle.reward.data as Prisma.InputJsonValue,
           targetDilemmaId: dilemmaId,
           displayOrder: displayOrder++,
+          isInitialObjective: puzzle.isInitialObjective || false,
+          discoversOnRoomEntry: puzzle.discoversOnRoomEntry || false,
         },
       });
       puzzleIdMap.set(puzzle.name, created.id);
@@ -305,26 +352,36 @@ export async function persistGeneratedStory(
     }
 
     // ============================================
-    // 13. Activate first puzzle(s) in chain
+    // 13. Activate and discover the initial objective only
     // ============================================
-    // Find puzzles with no prerequisites (root puzzles)
-    const puzzlesWithPrereqs = new Set<string>();
-    for (const link of data.puzzles.puzzleChains) {
-      if (link.linkType === 'sequential') {
-        puzzlesWithPrereqs.add(link.targetPuzzle);
-      }
-    }
+    // Find the puzzle marked as initial objective
+    const initialObjective = data.puzzles.puzzles.find(p => p.isInitialObjective);
 
-    // Activate puzzles that have no prerequisites
-    for (const puzzle of data.puzzles.puzzles) {
-      if (!puzzlesWithPrereqs.has(puzzle.name)) {
-        const puzzleId = puzzleIdMap.get(puzzle.name);
+    if (initialObjective) {
+      const puzzleId = puzzleIdMap.get(initialObjective.name);
+      if (puzzleId) {
+        await tx.puzzle.update({
+          where: { id: puzzleId },
+          data: {
+            status: 'active',
+            isActive: true,
+            isDiscovered: true,
+            startedAt: new Date(),
+          },
+        });
+      }
+    } else {
+      // Fallback: if no initial objective marked, activate the first puzzle
+      const firstPuzzle = data.puzzles.puzzles[0];
+      if (firstPuzzle) {
+        const puzzleId = puzzleIdMap.get(firstPuzzle.name);
         if (puzzleId) {
           await tx.puzzle.update({
             where: { id: puzzleId },
             data: {
               status: 'active',
               isActive: true,
+              isDiscovered: true,
               startedAt: new Date(),
             },
           });
@@ -403,4 +460,55 @@ export async function getGenerationSummary(storyId: string): Promise<{
   ]);
 
   return { rooms, characters, puzzles, dilemmas, secrets, skills };
+}
+
+/**
+ * Generate a story-themed name based on the player's real name and story context
+ * Uses a fast model for quick, cheap generation
+ */
+export async function generateThemedName(
+  storyId: string,
+  playerName: string,
+  storyData: AllStepData
+): Promise<string> {
+  const { identity, backstory } = storyData;
+
+  const prompt = `Generate a character name for a ${identity.genreBlend.join('/')} story.
+
+PLAYER'S REAL NAME: ${playerName}
+STORY TITLE: ${identity.title}
+SETTING: ${identity.settingEra}
+TONE: ${identity.tone}
+GENRES: ${identity.genreBlend.join(', ')}
+CHARACTER BACKGROUND: ${backstory.background.substring(0, 300)}...
+
+Create a name that:
+1. Keeps the player's first name (${playerName}) or a recognizable variant
+2. Adds a surname that fits the story's genre, setting, and tone
+3. Feels natural for the world (e.g., spy thriller = "Jake Sterling", gothic horror = "Jacob Ravencroft", fantasy = "Jake Ironforge")
+4. Is memorable but not too on-the-nose or cliché
+
+Respond with ONLY the full name, nothing else.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: FAST_MODEL,
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const themedName = (response.content[0] as { type: string; text: string }).text.trim();
+
+    // Update the CharacterBackstory with the themed name
+    await prisma.characterBackstory.updateMany({
+      where: { storyId },
+      data: { name: themedName },
+    });
+
+    console.log(`Generated themed name: "${playerName}" -> "${themedName}"`);
+    return themedName;
+  } catch (error) {
+    console.error('Failed to generate themed name, keeping original:', error);
+    return playerName;
+  }
 }

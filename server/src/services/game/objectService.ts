@@ -1,4 +1,5 @@
 import { PrismaClient, GameObject } from '@prisma/client';
+import * as puzzleService from './puzzleService.js';
 
 const prisma = new PrismaClient();
 
@@ -11,6 +12,7 @@ export interface CommandResult {
     confidence: number;
     reasoning: string;
   };
+  discoveryNarratives?: string[];
 }
 
 /**
@@ -35,6 +37,37 @@ export async function getInventory(storyId: string): Promise<GameObject[]> {
 }
 
 /**
+ * Minimal object interface for matching - only needs name and optional synonyms
+ */
+interface MatchableObject {
+  name: string;
+  synonyms?: unknown; // Can be string[] or JsonValue
+}
+
+/**
+ * Check if an object matches a search term by name or synonyms
+ */
+export function objectMatchesName(obj: MatchableObject, searchTerm: string): boolean {
+  const searchLower = searchTerm.toLowerCase();
+
+  // Check primary name
+  if (obj.name.toLowerCase().includes(searchLower)) {
+    return true;
+  }
+
+  // Check synonyms
+  const synonyms = (obj.synonyms as string[]) || [];
+  for (const synonym of synonyms) {
+    if (synonym.toLowerCase().includes(searchLower) ||
+        searchLower.includes(synonym.toLowerCase())) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Find an object by name in a room
  */
 export async function findObjectInRoom(
@@ -45,9 +78,7 @@ export async function findObjectInRoom(
     where: { roomId },
   });
 
-  return objects.find(obj =>
-    obj.name.toLowerCase().includes(objectName.toLowerCase())
-  ) || null;
+  return objects.find(obj => objectMatchesName(obj, objectName)) || null;
 }
 
 /**
@@ -59,9 +90,7 @@ export async function findObjectInInventory(
 ): Promise<GameObject | null> {
   const inventory = await getInventory(storyId);
 
-  return inventory.find(obj =>
-    obj.name.toLowerCase().includes(objectName.toLowerCase())
-  ) || null;
+  return inventory.find(obj => objectMatchesName(obj, objectName)) || null;
 }
 
 /**
@@ -94,6 +123,9 @@ export async function takeObject(
     data: { roomId: null },
   });
 
+  // Check if this item triggers puzzle discovery
+  const discoveryResult = await puzzleService.discoverPuzzlesFromItem(storyId, object.name);
+
   // Check if this is a story-critical item (potential personality signal)
   let personalitySignal: CommandResult['personalitySignal'];
   if (object.isStoryCritical) {
@@ -109,6 +141,7 @@ export async function takeObject(
     success: true,
     response: `You take the ${object.name}.`,
     personalitySignal,
+    discoveryNarratives: discoveryResult.narratives.length > 0 ? discoveryResult.narratives : undefined,
   };
 }
 

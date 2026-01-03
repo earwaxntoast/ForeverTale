@@ -34,6 +34,14 @@ export interface GenerationProgress {
   themedNarrative: string;
   isComplete: boolean;
   error?: string;
+  // Sub-progress within a step (e.g., room 5/30)
+  subProgress?: {
+    current: number;
+    total: number;
+    label: string;
+  };
+  // Boot-up style log messages
+  logMessages?: string[];
 }
 
 // Aggregated data from all steps
@@ -89,6 +97,11 @@ export interface MapRoomData {
     up?: boolean;
     down?: boolean;
   };
+  // Vehicle properties (rooms can be vehicles - boats, cars, elevators, etc.)
+  isVehicle?: boolean;
+  vehicleType?: 'water' | 'land' | 'air' | 'elevator' | 'magical';
+  boardingKeywords?: string[];  // ["car", "toyota", "sedan"]
+  dockedAtRoomName?: string;    // Room name where vehicle is initially docked
 }
 
 export interface InitialMapData {
@@ -105,11 +118,14 @@ export interface ConnectionDescription {
   targetRoomName: string;
   descriptionFromHere: string;     // "A sturdy oak door leads north"
   descriptionFromThere: string;    // "A sturdy oak door leads south"
+  isHidden: boolean;               // If true, exit is not visible until discovered
+  hiddenUntil?: string;            // Optional: what reveals it (e.g., "examine bookcase", puzzle name)
 }
 
 export interface RoomObject {
   name: string;
   description: string;
+  synonyms?: string[];              // Alternative names for the object
   isTakeable: boolean;
   isStoryCritical?: boolean;
   initialState?: Record<string, unknown>;
@@ -119,6 +135,8 @@ export interface EnhancedRoomData extends MapRoomData {
   fullDescription: string;           // 2-3 paragraphs
   connectionDescriptions: ConnectionDescription[];
   objects: RoomObject[];
+  // Vehicle-specific: known destinations (room names)
+  knownDestinationRoomNames?: string[];  // For vehicles: rooms they can travel to
 }
 
 export interface ConnectingAreasData {
@@ -171,6 +189,7 @@ export type OCEANDimension = 'O' | 'C' | 'E' | 'A' | 'N';
 export interface DilemmaOption {
   description: string;
   personalityImplication: string;
+  outcomeNarrative?: string;  // What happens when this choice is made
 }
 
 export interface DilemmaData {
@@ -224,6 +243,8 @@ export interface PuzzleData {
   reward: PuzzleReward;
   leadsToDilemma?: string;          // Name of dilemma this leads to
   prerequisites?: string[];          // Puzzle names that must be complete first
+  isInitialObjective?: boolean;      // True if this is the starting objective
+  discoversOnRoomEntry?: boolean;    // True if puzzle is immediately apparent when entering room
 }
 
 export interface PuzzleChainLink {

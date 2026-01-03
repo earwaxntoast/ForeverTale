@@ -246,9 +246,25 @@ async function applyPuzzleReward(storyId: string, puzzle: Puzzle): Promise<void>
     }
 
     case 'room_unlock': {
-      // Could unlock a hidden room or passage
-      // For now, just log - actual implementation depends on game mechanics
-      console.log(`Room unlock reward: ${JSON.stringify(rewardData)}`);
+      // Reveal a hidden exit in a room
+      const roomName = rewardData.roomName as string;
+      const direction = rewardData.direction as string;
+      if (roomName && direction) {
+        const room = await prisma.room.findFirst({
+          where: { storyId, name: roomName },
+        });
+        if (room) {
+          const discoveredExits = (room.discoveredExits as string[]) || [];
+          if (!discoveredExits.includes(direction)) {
+            await prisma.room.update({
+              where: { id: room.id },
+              data: {
+                discoveredExits: [...discoveredExits, direction],
+              },
+            });
+          }
+        }
+      }
       break;
     }
 
@@ -273,7 +289,7 @@ async function applyPuzzleReward(storyId: string, puzzle: Puzzle): Promise<void>
 }
 
 /**
- * Activate puzzles that depend on the completed puzzle
+ * Activate and discover puzzles that depend on the completed puzzle
  */
 async function activateLinkedPuzzles(completedPuzzleId: string): Promise<Puzzle[]> {
   // Find sequential links from this puzzle
@@ -297,6 +313,7 @@ async function activateLinkedPuzzles(completedPuzzleId: string): Promise<Puzzle[
         data: {
           status: 'active',
           isActive: true,
+          isDiscovered: true, // Also mark as discovered
           startedAt: new Date(),
         },
       });
@@ -312,14 +329,15 @@ async function activateLinkedPuzzles(completedPuzzleId: string): Promise<Puzzle[
 // ============================================
 
 /**
- * Get active objectives for sidebar display
+ * Get discovered objectives for sidebar display
+ * Only shows puzzles that have been discovered by the player
  */
 export async function getObjectives(storyId: string): Promise<ObjectiveDisplay[]> {
   const puzzles = await prisma.puzzle.findMany({
     where: {
       storyId,
-      isActive: true,
-      status: { in: ['active', 'pending'] },
+      isDiscovered: true, // Only show discovered puzzles
+      status: { in: ['active', 'pending'] }, // Not completed or failed
     },
     include: {
       steps: { orderBy: { stepNumber: 'asc' } },
@@ -418,4 +436,279 @@ export async function getCurrentPuzzleStep(
     },
     orderBy: { stepNumber: 'asc' },
   });
+}
+
+// ============================================
+// Puzzle Discovery
+// ============================================
+
+export interface DiscoveryResult {
+  discoveredPuzzles: Puzzle[];
+  narratives: string[];
+}
+
+/**
+ * Discover puzzles when player picks up an item
+ * If an item is required for any puzzle step, that puzzle is discovered
+ */
+export async function discoverPuzzlesFromItem(
+  storyId: string,
+  itemName: string
+): Promise<DiscoveryResult> {
+  const result: DiscoveryResult = {
+    discoveredPuzzles: [],
+    narratives: [],
+  };
+
+  const normalizedItem = itemName.toLowerCase();
+
+  // Find all undiscovered puzzles
+  const undiscoveredPuzzles = await prisma.puzzle.findMany({
+    where: {
+      storyId,
+      isDiscovered: false,
+      status: 'pending',
+    },
+    include: {
+      steps: true,
+    },
+  });
+
+  for (const puzzle of undiscoveredPuzzles) {
+    // Check if any step requires this item
+    for (const step of puzzle.steps) {
+      const requirements = step.requirements as PuzzleStepRequirements;
+      if (requirements.requiredItems) {
+        const hasMatch = requirements.requiredItems.some(reqItem =>
+          normalizedItem.includes(reqItem.toLowerCase()) ||
+          reqItem.toLowerCase().includes(normalizedItem)
+        );
+
+        if (hasMatch) {
+          // Discover the puzzle
+          await prisma.puzzle.update({
+            where: { id: puzzle.id },
+            data: { isDiscovered: true },
+          });
+
+          result.discoveredPuzzles.push(puzzle);
+          result.narratives.push(`[New objective discovered: ${puzzle.name}]`);
+          break; // Only need to discover once per puzzle
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Discover puzzles when player performs an action
+ * If an action matches any puzzle step's requiredActions, that puzzle is discovered
+ */
+export async function discoverPuzzlesFromAction(
+  storyId: string,
+  action: string
+): Promise<DiscoveryResult> {
+  const result: DiscoveryResult = {
+    discoveredPuzzles: [],
+    narratives: [],
+  };
+
+  const normalizedAction = action.toLowerCase();
+
+  // Find all undiscovered puzzles
+  const undiscoveredPuzzles = await prisma.puzzle.findMany({
+    where: {
+      storyId,
+      isDiscovered: false,
+      status: 'pending',
+    },
+    include: {
+      steps: true,
+    },
+  });
+
+  for (const puzzle of undiscoveredPuzzles) {
+    // Check if any step's required action is part of the player's action
+    for (const step of puzzle.steps) {
+      const requirements = step.requirements as PuzzleStepRequirements;
+      if (requirements.requiredActions) {
+        const hasMatch = requirements.requiredActions.some(reqAction =>
+          normalizedAction.includes(reqAction.toLowerCase())
+        );
+
+        if (hasMatch) {
+          // Discover the puzzle
+          await prisma.puzzle.update({
+            where: { id: puzzle.id },
+            data: { isDiscovered: true },
+          });
+
+          result.discoveredPuzzles.push(puzzle);
+          result.narratives.push(`[New objective discovered: ${puzzle.name}]`);
+          break; // Only need to discover once per puzzle
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Discover puzzles when player enters a room
+ * Only discovers puzzles that have discoversOnRoomEntry = true
+ */
+export async function discoverPuzzlesOnRoomEntry(
+  storyId: string,
+  roomId: string
+): Promise<DiscoveryResult> {
+  const result: DiscoveryResult = {
+    discoveredPuzzles: [],
+    narratives: [],
+  };
+
+  // Find puzzles in this room that should auto-discover on entry
+  const puzzlesToDiscover = await prisma.puzzle.findMany({
+    where: {
+      storyId,
+      roomId,
+      isDiscovered: false,
+      discoversOnRoomEntry: true,
+      status: 'pending',
+    },
+  });
+
+  for (const puzzle of puzzlesToDiscover) {
+    await prisma.puzzle.update({
+      where: { id: puzzle.id },
+      data: {
+        isDiscovered: true,
+        status: 'active', // Also activate since it's immediately apparent
+        isActive: true,
+        startedAt: new Date(),
+      },
+    });
+
+    result.discoveredPuzzles.push(puzzle);
+    result.narratives.push(`[New objective: ${puzzle.name}]`);
+  }
+
+  return result;
+}
+
+/**
+ * Manually discover a puzzle (e.g., when triggered by game logic)
+ */
+export async function discoverPuzzle(puzzleId: string): Promise<Puzzle> {
+  return prisma.puzzle.update({
+    where: { id: puzzleId },
+    data: { isDiscovered: true },
+  });
+}
+
+// ============================================
+// Hidden Exit Discovery
+// ============================================
+
+export interface ExitDiscoveryResult {
+  discoveredExits: { roomId: string; roomName: string; direction: string }[];
+  narratives: string[];
+}
+
+/**
+ * Check if player action reveals any hidden exits in the current room
+ * Called after each player action to see if they discovered a secret passage
+ */
+export async function discoverHiddenExits(
+  storyId: string,
+  currentRoomId: string,
+  playerAction: string
+): Promise<ExitDiscoveryResult> {
+  const result: ExitDiscoveryResult = {
+    discoveredExits: [],
+    narratives: [],
+  };
+
+  // Get current room with connection descriptions from story seed
+  const story = await prisma.story.findUnique({
+    where: { id: storyId },
+    select: { storySeed: true },
+  });
+
+  const room = await prisma.room.findUnique({
+    where: { id: currentRoomId },
+    select: {
+      id: true,
+      name: true,
+      hiddenExits: true,
+      discoveredExits: true,
+    },
+  });
+
+  if (!room || !story?.storySeed) return result;
+
+  const hiddenExits = (room.hiddenExits as string[]) || [];
+  const discoveredExits = (room.discoveredExits as string[]) || [];
+  const normalizedAction = playerAction.toLowerCase();
+
+  // Get the room's connection descriptions from the story seed
+  const storySeed = story.storySeed as { connectingAreas?: { rooms?: Array<{
+    name: string;
+    connectionDescriptions?: Array<{
+      direction: string;
+      isHidden?: boolean;
+      hiddenUntil?: string;
+    }>;
+  }> } };
+
+  const roomData = storySeed.connectingAreas?.rooms?.find(
+    r => r.name.toLowerCase() === room.name.toLowerCase()
+  );
+
+  if (!roomData?.connectionDescriptions) return result;
+
+  // Check each hidden exit to see if player action matches hiddenUntil
+  for (const conn of roomData.connectionDescriptions) {
+    if (!conn.isHidden || !conn.hiddenUntil) continue;
+    if (!hiddenExits.includes(conn.direction)) continue;
+    if (discoveredExits.includes(conn.direction)) continue;
+
+    // Check if player action matches the hiddenUntil condition
+    const hiddenUntil = conn.hiddenUntil.toLowerCase();
+
+    // Simple pattern matching - check if action contains key words from hiddenUntil
+    // e.g., "examine bookcase" matches "examine bookcase"
+    // e.g., "look at the old bookcase" matches "examine bookcase" (contains "bookcase")
+    const hiddenUntilWords = hiddenUntil.split(/\s+/);
+    const matchesAction = hiddenUntilWords.every(word =>
+      normalizedAction.includes(word) ||
+      // Also check common synonyms
+      (word === 'examine' && (normalizedAction.includes('look') || normalizedAction.includes('search') || normalizedAction.includes('inspect'))) ||
+      (word === 'use' && normalizedAction.includes('put')) ||
+      (word === 'pull' && normalizedAction.includes('move'))
+    );
+
+    if (matchesAction) {
+      // Reveal this exit!
+      const newDiscoveredExits = [...discoveredExits, conn.direction];
+      await prisma.room.update({
+        where: { id: room.id },
+        data: { discoveredExits: newDiscoveredExits },
+      });
+
+      result.discoveredExits.push({
+        roomId: room.id,
+        roomName: room.name,
+        direction: conn.direction,
+      });
+      result.narratives.push(`[You discovered a hidden passage to the ${conn.direction}!]`);
+
+      // Update discoveredExits array for subsequent checks in same action
+      discoveredExits.push(conn.direction);
+    }
+  }
+
+  return result;
 }

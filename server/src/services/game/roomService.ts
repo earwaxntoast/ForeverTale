@@ -10,6 +10,7 @@ export interface RoomWithDetails extends Room {
     id: string;
     name: string;
     description: string | null;
+    synonyms: unknown; // JSON array of alternative names
     state: unknown;
     firstExaminedAt: Date | null;
   }>;
@@ -50,7 +51,7 @@ export async function getRoom(roomId: string): Promise<RoomWithDetails | null> {
     include: {
       gameObjects: {
         where: { roomId: roomId }, // Only objects in this room (not in inventory)
-        select: { id: true, name: true, description: true, state: true, firstExaminedAt: true },
+        select: { id: true, name: true, description: true, synonyms: true, state: true, firstExaminedAt: true },
       },
       charactersHere: {
         select: { id: true, name: true, description: true },
@@ -108,19 +109,38 @@ export async function createRoom(data: {
 
 /**
  * Connect two rooms in a given direction
+ * @param revealHiddenExits - If true, any hidden exits in this direction will be marked as discovered
  */
 export async function connectRooms(
   fromRoomId: string,
   toRoomId: string,
   direction: Direction,
-  bidirectional: boolean = true
+  bidirectional: boolean = true,
+  revealHiddenExits: boolean = false
 ): Promise<void> {
   const directionField = `${direction}RoomId` as const;
+
+  // Get the from room to check for hidden exits
+  const fromRoom = await prisma.room.findUnique({
+    where: { id: fromRoomId },
+    select: { hiddenExits: true, discoveredExits: true },
+  });
+
+  const updateData: Record<string, unknown> = { [directionField]: toRoomId };
+
+  // If revealing hidden exits and this direction was hidden, mark it as discovered
+  if (revealHiddenExits && fromRoom) {
+    const hiddenExits = (fromRoom.hiddenExits as string[]) || [];
+    const discoveredExits = (fromRoom.discoveredExits as string[]) || [];
+    if (hiddenExits.includes(direction) && !discoveredExits.includes(direction)) {
+      updateData.discoveredExits = [...discoveredExits, direction];
+    }
+  }
 
   // Update the "from" room
   await prisma.room.update({
     where: { id: fromRoomId },
-    data: { [directionField]: toRoomId },
+    data: updateData,
   });
 
   // If bidirectional, also connect the reverse
@@ -128,9 +148,26 @@ export async function connectRooms(
     const oppositeDirection = OPPOSITE_DIRECTION[direction];
     const oppositeField = `${oppositeDirection}RoomId` as const;
 
+    // Get the to room to check for hidden exits
+    const toRoom = await prisma.room.findUnique({
+      where: { id: toRoomId },
+      select: { hiddenExits: true, discoveredExits: true },
+    });
+
+    const reverseUpdateData: Record<string, unknown> = { [oppositeField]: fromRoomId };
+
+    // If revealing hidden exits and the opposite direction was hidden, mark it as discovered
+    if (revealHiddenExits && toRoom) {
+      const hiddenExits = (toRoom.hiddenExits as string[]) || [];
+      const discoveredExits = (toRoom.discoveredExits as string[]) || [];
+      if (hiddenExits.includes(oppositeDirection) && !discoveredExits.includes(oppositeDirection)) {
+        reverseUpdateData.discoveredExits = [...discoveredExits, oppositeDirection];
+      }
+    }
+
     await prisma.room.update({
       where: { id: toRoomId },
-      data: { [oppositeField]: fromRoomId },
+      data: reverseUpdateData,
     });
   }
 }
@@ -230,8 +267,8 @@ export async function generateAdjacentRoom(
   // Check if a room already exists at these coordinates
   const existingRoom = await getRoomAtCoordinates(storyId, newX, newY, newZ);
   if (existingRoom) {
-    // Connect the rooms if not already connected
-    await connectRooms(fromRoom.id, existingRoom.id, direction);
+    // Connect the rooms if not already connected, revealing any hidden exits
+    await connectRooms(fromRoom.id, existingRoom.id, direction, true, true);
     return existingRoom;
   }
 
@@ -246,17 +283,21 @@ export async function generateAdjacentRoom(
   }
 
   // Create a placeholder room - AI will generate details on first visit
-  const newRoom = await createRoom({
-    storyId,
-    name: `Unexplored Area`, // Will be updated by AI
-    x: newX,
-    y: newY,
-    z: newZ,
-    isGenerated: true,
+  const newRoom = await prisma.room.create({
+    data: {
+      storyId,
+      name: `Unexplored Area`, // Will be updated by AI
+      x: newX,
+      y: newY,
+      z: newZ,
+      isGenerated: true,
+      hiddenExits: [], // Dynamically created rooms start with no hidden exits
+      discoveredExits: [], // All exits are visible by default
+    },
   });
 
-  // Connect the rooms
-  await connectRooms(fromRoom.id, newRoom.id, direction);
+  // Connect the rooms, revealing any hidden exits on the source room
+  await connectRooms(fromRoom.id, newRoom.id, direction, true, true);
 
   return newRoom;
 }

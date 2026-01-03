@@ -3,6 +3,19 @@ import { Decimal } from '@prisma/client/runtime/library';
 
 const prisma = new PrismaClient();
 
+/**
+ * Convert a string to Title Case (each word capitalized)
+ * "security protocols" → "Security Protocols"
+ * "SECURITY PROTOCOLS" → "Security Protocols"
+ */
+function toTitleCase(str: string): string {
+  return str
+    .toLowerCase()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 // Default verb-to-skill mappings
 export const DEFAULT_SKILL_VERBS: Record<string, string[]> = {
   // Physical
@@ -121,19 +134,30 @@ export async function getOrCreateAbility(
   origin: 'backstory' | 'attempted' | 'trained' | 'story_event' = 'attempted',
   startingLevel: number = 1
 ): Promise<PlayerAbility> {
-  // Normalize ability name
-  const normalizedName = abilityName.charAt(0).toUpperCase() + abilityName.slice(1).toLowerCase();
+  // Normalize ability name to Title Case for consistency
+  const normalizedName = toTitleCase(abilityName.trim());
 
-  // Check if ability exists
+  // First try exact match (fast path)
   let ability = await prisma.playerAbility.findUnique({
     where: {
       storyId_name: { storyId, name: normalizedName },
     },
   });
 
+  // If no exact match, try case-insensitive search as safety net
   if (!ability) {
-    // Get default verbs for this skill
+    ability = await prisma.playerAbility.findFirst({
+      where: {
+        storyId,
+        name: { equals: normalizedName, mode: 'insensitive' },
+      },
+    });
+  }
+
+  if (!ability) {
+    // Get default verbs/nouns for this skill
     const triggerVerbs = DEFAULT_SKILL_VERBS[normalizedName] || [];
+    const triggerNouns = DEFAULT_SKILL_NOUNS[normalizedName] || [];
 
     ability = await prisma.playerAbility.create({
       data: {
@@ -142,6 +166,7 @@ export async function getOrCreateAbility(
         level: startingLevel,
         origin,
         triggerVerbs,
+        triggerNouns,
       },
     });
   }
@@ -344,12 +369,26 @@ export async function getAbilities(storyId: string): Promise<PlayerAbility[]> {
  * Get ability by name
  */
 export async function getAbility(storyId: string, name: string): Promise<PlayerAbility | null> {
-  const normalizedName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-  return prisma.playerAbility.findUnique({
+  const normalizedName = toTitleCase(name.trim());
+
+  // Try exact match first
+  let ability = await prisma.playerAbility.findUnique({
     where: {
       storyId_name: { storyId, name: normalizedName },
     },
   });
+
+  // Fall back to case-insensitive search
+  if (!ability) {
+    ability = await prisma.playerAbility.findFirst({
+      where: {
+        storyId,
+        name: { equals: normalizedName, mode: 'insensitive' },
+      },
+    });
+  }
+
+  return ability;
 }
 
 /**
@@ -362,7 +401,7 @@ export async function createStartingAbilities(
   const created: PlayerAbility[] = [];
 
   for (const ability of abilities) {
-    const normalizedName = ability.name.charAt(0).toUpperCase() + ability.name.slice(1).toLowerCase();
+    const normalizedName = toTitleCase(ability.name.trim());
     const triggerVerbs = ability.verbs || DEFAULT_SKILL_VERBS[normalizedName] || [];
     const triggerNouns = ability.nouns || DEFAULT_SKILL_NOUNS[normalizedName] || [];
 

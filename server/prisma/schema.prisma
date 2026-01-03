@@ -139,6 +139,9 @@ model Story {
   // Puzzle system
   puzzles            Puzzle[]
 
+  // Object systems
+  objectSystems      ObjectSystem[]
+
   @@map("stories")
 }
 
@@ -607,6 +610,18 @@ model Room {
   // Atmosphere for AI context
   atmosphere      Json     @default("{}") // { lighting, mood, sounds, smells }
 
+  // Exit visibility - tracks which exits are hidden and which have been discovered
+  hiddenExits     Json     @default("[]") @map("hidden_exits")     // ["north", "east"] - set at generation
+  discoveredExits Json     @default("[]") @map("discovered_exits") // ["north"] - updated at runtime
+
+  // Vehicle properties (rooms can be vehicles - boats, cars, elevators, etc.)
+  isVehicle          Boolean  @default(false) @map("is_vehicle")
+  vehicleType        String?  @map("vehicle_type")      // "water", "land", "air", "elevator"
+  dockedAtRoomId     String?  @map("docked_at_room_id") // Where vehicle is currently located
+  previousDockedAtId String?  @map("previous_docked_at_id") // For "go back" functionality
+  knownDestinations  Json     @default("[]") @map("known_destinations") // Room IDs this vehicle can travel to
+  boardingKeywords   Json     @default("[]") @map("boarding_keywords") // ["car", "toyota", "sedan"]
+
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -616,6 +631,10 @@ model Room {
   dilemmaPoints   DilemmaPoint[]
   timedEvents     TimedEvent[]
   puzzles         Puzzle[]
+
+  // Vehicle docking relations
+  dockedAt        Room?   @relation("VehicleDocking", fields: [dockedAtRoomId], references: [id])
+  dockedVehicles  Room[]  @relation("VehicleDocking")
 
   @@unique([storyId, x, y, z])
   @@map("rooms")
@@ -628,6 +647,7 @@ model GameObject {
   roomId          String?  @map("room_id") // null = in player inventory
   name            String
   description     String?
+  synonyms        Json     @default("[]") // Alternative names: ["lamp", "lantern", "light"]
 
   // Object properties
   isTakeable      Boolean  @default(true) @map("is_takeable")
@@ -636,8 +656,16 @@ model GameObject {
   isLocked        Boolean  @default(false) @map("is_locked")
   keyObjectId     String?  @map("key_object_id") // what unlocks this
 
-  // State tracking
-  state           Json     @default("{}") // flexible state: { broken: false, lit: true, etc. }
+  // Internal state tracking (for game logic)
+  state           Json     @default("{}")
+
+  // Dynamic AI-generated description of current state
+  // e.g., "The pan is scorching hot", "The vase is shattered into pieces"
+  stateDescription String?  @map("state_description")
+
+  // Object system - links related objects (electrical, plumbing, etc.)
+  systemId        String?  @map("system_id")
+  system          ObjectSystem? @relation(fields: [systemId], references: [id])
 
   // For story coherence
   isStoryCritical Boolean  @default(false) @map("is_story_critical")
@@ -653,6 +681,27 @@ model GameObject {
   containedInId   String?       @map("contained_in_id")
 
   @@map("game_objects")
+}
+
+// Object Systems - Groups of related objects that affect each other
+// e.g., electrical system (generator, lights, switches), plumbing, boat systems
+model ObjectSystem {
+  id          String   @id @default(uuid())
+  storyId     String   @map("story_id")
+  name        String   // "manor_electrical", "boat_inflation_system"
+  description String?  // "The electrical system powering Blackwood Manor"
+
+  // System-wide state that affects all linked objects
+  // e.g., { powered: true }, { waterPressure: "normal" }
+  systemState String?  @map("system_state") // AI-generated state description
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  story       Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  objects     GameObject[]
+
+  @@map("object_systems")
 }
 
 // Player State - Current game state
@@ -794,8 +843,13 @@ model Puzzle {
   rewardData      Json         @default("{}") @map("reward_data")
 
   // Display in sidebar
-  isActive        Boolean      @default(false) @map("is_active") // Shows in objectives when true
+  isActive        Boolean      @default(false) @map("is_active") // Currently being worked on
+  isDiscovered    Boolean      @default(false) @map("is_discovered") // Visible in objectives sidebar
   displayOrder    Int          @default(0) @map("display_order")
+
+  // Discovery settings
+  isInitialObjective    Boolean @default(false) @map("is_initial_objective") // The starting objective
+  discoversOnRoomEntry  Boolean @default(false) @map("discovers_on_room_entry") // Auto-discover when entering room
 
   // Link to dilemma (puzzle can lead to a dilemma)
   targetDilemmaId String?      @map("target_dilemma_id")

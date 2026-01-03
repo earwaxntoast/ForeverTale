@@ -11,6 +11,7 @@ interface StoryContext {
   tone: string;
   storySeed: Record<string, unknown>;
   recentFacts: string[];
+  playerAbilities: Array<{ name: string; level: number }>;
 }
 
 /**
@@ -32,6 +33,13 @@ async function getStoryContext(storyId: string): Promise<StoryContext> {
     throw new Error(`Story ${storyId} not found`);
   }
 
+  // Fetch player abilities for context
+  const abilities = await prisma.playerAbility.findMany({
+    where: { storyId },
+    orderBy: { level: 'desc' },
+    take: 20,
+  });
+
   const storySeed = (story.storySeed as Record<string, unknown>) || {};
   const genreTags = (story.genreTags as string[]) || [];
 
@@ -41,6 +49,7 @@ async function getStoryContext(storyId: string): Promise<StoryContext> {
     tone: (storySeed.tone as string) || 'mysterious',
     storySeed,
     recentFacts: story.storyFacts.map(f => f.content),
+    playerAbilities: abilities.map(a => ({ name: a.name, level: Number(a.level) })),
   };
 }
 
@@ -192,11 +201,12 @@ export async function processCommand(
 
   const objectList = roomContext.objects.map(o => o.name).join(', ') || 'nothing of note';
   const characterList = roomContext.characters.map(c => c.name).join(', ') || 'no one';
+  const roomDescription = roomContext.room.description || '';
 
   // If skill check is requested, include skill check parameters in prompt
   const skillCheckInstructions = roomContext.requestSkillCheck ? `
 SKILL CHECK REQUIRED:
-This action requires a ${roomContext.suggestedSkill || 'skill'} check. Determine the appropriate difficulty (0-40 scale):
+This action requires a "${roomContext.suggestedSkill}" check. Determine the appropriate difficulty (0-40 scale):
 - 0-5: Trivial (anyone can do this)
 - 6-10: Easy
 - 11-15: Moderate
@@ -206,11 +216,19 @@ This action requires a ${roomContext.suggestedSkill || 'skill'} check. Determine
 - 31-35: Heroic
 - 36-40: Legendary/Near-impossible
 
+IMPORTANT: When referencing skills in your narrative, use the EXACT skill name "${roomContext.suggestedSkill}" as shown in the player's skill list. Do not paraphrase or use alternative names.
+
 Also provide BOTH a success and failure narrative.` : '';
+
+  // Format player abilities for prompt
+  const abilitiesList = context.playerAbilities.length > 0
+    ? context.playerAbilities.map(a => `${a.name} (${a.level.toFixed(1)})`).join(', ')
+    : 'none';
 
   const prompt = `You are the game engine for a ${context.genre} text adventure in the style of Zork.
 
 CURRENT ROOM: ${roomContext.room.name}
+${roomDescription ? `ROOM DESCRIPTION: ${roomDescription}` : ''}
 OBJECTS HERE: ${objectList}
 CHARACTERS HERE: ${characterList}
 
@@ -218,11 +236,13 @@ STORY CONTEXT:
 - Genre: ${context.genre}
 - Tone: ${context.tone}
 ${context.recentFacts.length > 0 ? `- Key facts: ${context.recentFacts.slice(0, 5).join('; ')}` : ''}
+- Player skills: ${abilitiesList}
 
 PLAYER COMMAND: "${command}"
 ${skillCheckInstructions}
 
 Interpret this command and respond appropriately. Be a "yes, and" game master - try to make the player's action work within reason.
+IMPORTANT: If the player references something mentioned in the ROOM DESCRIPTION, respond consistently with that description. Do NOT contradict previously established details.
 
 Respond in JSON format:
 {
@@ -300,6 +320,11 @@ export async function generateSpectacularNarrative(
 
   const isCriticalSuccess = resultType === 'critical_success';
 
+  // Format player abilities for prompt
+  const abilitiesList = context.playerAbilities.length > 0
+    ? context.playerAbilities.map(a => `${a.name} (${a.level.toFixed(1)})`).join(', ')
+    : 'none';
+
   const prompt = `You are the narrator for a ${context.genre} text adventure game.
 
 CURRENT ROOM: ${roomContext.room.name}
@@ -309,10 +334,12 @@ CHARACTERS HERE: ${characterList}
 STORY CONTEXT:
 - Genre: ${context.genre}
 - Tone: ${context.tone}
+- Player skills: ${abilitiesList}
 
 PLAYER ACTION: "${command}"
 SKILL USED: ${skillName}
 RESULT: ${isCriticalSuccess ? 'NATURAL 20 - CRITICAL SUCCESS!' : 'NATURAL 1 - CRITICAL FAILURE!'}
+NOTE: When referencing the skill, use the exact name "${skillName}" as shown.
 
 ${isCriticalSuccess
   ? `Write a SPECTACULAR SUCCESS narrative. This is a moment of legend!
@@ -431,29 +458,39 @@ export async function extractAndCreateDiscoveredItems(
   // Get existing objects to avoid duplicates
   const existingNamesLower = existingObjectNames.map(n => n.toLowerCase());
 
-  const prompt = `Analyze this game narrative response and extract any NEW interactable items that the player could pick up or examine.
+  const prompt = `Analyze this game narrative response and extract ANY specific items mentioned that a player might want to examine or interact with.
 
 NARRATIVE:
 "${aiResponse}"
 
 ITEMS ALREADY IN THIS ROOM: ${existingObjectNames.length > 0 ? existingObjectNames.join(', ') : 'none'}
 
-Extract ONLY items that:
-1. Are explicitly mentioned as visible or discoverable in the narrative
-2. Are physical objects the player could reasonably pick up or interact with
-3. Are NOT already in the existing items list
-4. Are NOT general scenery (walls, floor, ceiling, shelves themselves)
+IMPORTANT: Be THOROUGH in extracting items. Extract ANY specific object mentioned, including:
+- Items on surfaces (on mantelpieces, tables, shelves, etc.)
+- Items in containers (in boxes, on racks, etc.)
+- Decorative items (drawings, flowers, trinkets, tokens, etc.)
+- Items being worn or held by characters
+- Items that are part of furniture (drawer, handle, etc.) if specifically mentioned
+- Documents, papers, books, notes
+- Small objects like stones, keys, coins, jewelry
 
-For each new item found, provide:
-- name: A short name (2-4 words) for the item
-- description: A brief description based on the narrative
-- isTakeable: true if it can be picked up, false if it's fixed in place
+DO NOT extract:
+- Generic structural elements (walls, floor, ceiling)
+- The furniture itself unless it's specifically interactable (extract "brass drawer" not "desk")
+- Abstract concepts
+- Items already in the existing items list
 
-If no new interactable items are mentioned, return an empty array.
+For EACH new item found, provide:
+- name: A short name (2-4 words) matching how it was described in the narrative
+- description: The description from the narrative, preserving WHERE the item was mentioned (e.g., "A child's drawing resting on the stone mantelpiece")
+- isTakeable: true if it could be picked up (most small items), false if it's fixed/attached
+- synonyms: array of 2-4 alternative names players might use to refer to this object
+
+Extract ALL mentioned items. If 3 items are on a mantelpiece, extract all 3.
 
 Respond ONLY with a JSON array:
 [
-  { "name": "item name", "description": "brief description", "isTakeable": true }
+  { "name": "item name", "description": "brief description including location", "isTakeable": true, "synonyms": ["alt1", "alt2"] }
 ]`;
 
   try {
@@ -489,26 +526,35 @@ Respond ONLY with a JSON array:
 
     for (const item of items) {
       // Skip if item already exists (case-insensitive check)
-      if (existingNamesLower.some(existing =>
-        existing.includes(item.name.toLowerCase()) ||
-        item.name.toLowerCase().includes(existing)
-      )) {
+      // Also check for items with * prefix (already discovered items)
+      const itemNameLower = item.name.toLowerCase();
+      if (existingNamesLower.some(existing => {
+        const existingClean = existing.replace(/^\*/, '');
+        return existingClean.includes(itemNameLower) ||
+               itemNameLower.includes(existingClean) ||
+               existing.includes(itemNameLower) ||
+               itemNameLower.includes(existing);
+      })) {
         continue;
       }
+
+      // Prefix with * to indicate this is a dynamically discovered item
+      const itemName = `*${item.name}`;
 
       // Create the game object
       await prisma.gameObject.create({
         data: {
           storyId,
           roomId,
-          name: item.name,
+          name: itemName,
           description: item.description,
+          synonyms: item.synonyms || [],
           isTakeable: item.isTakeable ?? true,
           state: { discoveredFrom: 'ai_response' },
         },
       });
 
-      createdItems.push({ name: item.name, description: item.description });
+      createdItems.push({ name: itemName, description: item.description });
     }
 
     return createdItems;
@@ -765,15 +811,37 @@ If no new passage is created, respond with: {"createsPassage": false}`;
 
     if (existingRoom && !isPortal) {
       // For physical passages, connect to existing room
+      // Also reveal this exit if it was hidden (player just discovered the passage)
+      const currentHiddenExits = (currentRoom.hiddenExits as string[]) || [];
+      const currentDiscoveredExits = (currentRoom.discoveredExits as string[]) || [];
+
+      const updateData: Record<string, unknown> = { [`${direction}RoomId`]: existingRoom.id };
+
+      // If this direction was hidden, mark it as discovered
+      if (currentHiddenExits.includes(direction) && !currentDiscoveredExits.includes(direction)) {
+        updateData.discoveredExits = [...currentDiscoveredExits, direction];
+      }
+
       await prisma.room.update({
         where: { id: currentRoomId },
-        data: { [`${direction}RoomId`]: existingRoom.id },
+        data: updateData,
       });
 
       if (!isOneWay) {
+        const oppositeDir = oppositeDirections[direction];
+        const existingHiddenExits = (existingRoom.hiddenExits as string[]) || [];
+        const existingDiscoveredExits = (existingRoom.discoveredExits as string[]) || [];
+
+        const existingUpdateData: Record<string, unknown> = { [`${oppositeDir}RoomId`]: currentRoomId };
+
+        // If the opposite direction was hidden in the existing room, mark it as discovered
+        if (existingHiddenExits.includes(oppositeDir) && !existingDiscoveredExits.includes(oppositeDir)) {
+          existingUpdateData.discoveredExits = [...existingDiscoveredExits, oppositeDir];
+        }
+
         await prisma.room.update({
           where: { id: existingRoom.id },
-          data: { [`${oppositeDirections[direction]}RoomId`]: currentRoomId },
+          data: existingUpdateData,
         });
       }
 
@@ -791,6 +859,8 @@ If no new passage is created, respond with: {"createsPassage": false}`;
         z: newZ,
         isGenerated: true,
         atmosphere: isPortal ? { isPortalDestination: true, isTemporary, sourceRoomId: currentRoomId } : {},
+        hiddenExits: [], // Dynamically created rooms start with no hidden exits
+        discoveredExits: [], // All exits are visible by default
       },
     });
 
@@ -845,9 +915,20 @@ If no new passage is created, respond with: {"createsPassage": false}`;
       console.log(`Created portal destination "${newRoom.name}" at (${newX}, ${newY}, ${newZ}) - ${isOneWay ? 'one-way' : 'two-way'} ${isTemporary ? 'temporary ' : ''}portal from "${currentRoom.name}"`);
     } else {
       // Physical passage - bidirectional connection
+      // Also reveal this exit if it was hidden (player just discovered the passage)
+      const currentHiddenExits = (currentRoom.hiddenExits as string[]) || [];
+      const currentDiscoveredExits = (currentRoom.discoveredExits as string[]) || [];
+
+      const updateData: Record<string, unknown> = { [`${direction}RoomId`]: newRoom.id };
+
+      // If this direction was hidden, mark it as discovered
+      if (currentHiddenExits.includes(direction) && !currentDiscoveredExits.includes(direction)) {
+        updateData.discoveredExits = [...currentDiscoveredExits, direction];
+      }
+
       await prisma.room.update({
         where: { id: currentRoomId },
-        data: { [`${direction}RoomId`]: newRoom.id },
+        data: updateData,
       });
 
       await prisma.room.update({
@@ -984,4 +1065,104 @@ If no timed event is created, respond with: {"hasTimedEvent": false}`;
     console.error('Error extracting timed events:', error);
     return null;
   }
+}
+
+/**
+ * Detect characters mentioned in AI response and move them to the current room
+ * This ensures narrative consistency - if the AI says a character is present, they are present
+ */
+export async function updateCharacterPresence(
+  storyId: string,
+  roomId: string,
+  aiResponse: string
+): Promise<Array<{ name: string; movedFrom: string | null }>> {
+  // Get all characters in this story
+  const allCharacters = await prisma.character.findMany({
+    where: { storyId },
+    select: {
+      id: true,
+      name: true,
+      currentRoomId: true,
+      currentRoom: { select: { name: true } },
+    },
+  });
+
+  if (allCharacters.length === 0) {
+    return [];
+  }
+
+  const responseLower = aiResponse.toLowerCase();
+  const movedCharacters: Array<{ name: string; movedFrom: string | null }> = [];
+
+  for (const character of allCharacters) {
+    // Skip if character is already in this room
+    if (character.currentRoomId === roomId) {
+      continue;
+    }
+
+    // Check if character is mentioned in the response
+    // Use word boundary matching to avoid partial matches
+    const nameLower = character.name.toLowerCase();
+    const nameWords = nameLower.split(/\s+/);
+
+    // Check for full name or significant parts (first name, last name)
+    let isMentioned = false;
+
+    // Check full name
+    if (responseLower.includes(nameLower)) {
+      isMentioned = true;
+    }
+
+    // Check individual name parts (for names like "Dr. Chen" or "Marcus Webb")
+    // Only match if the word appears as a standalone word (with word boundaries)
+    if (!isMentioned) {
+      for (const word of nameWords) {
+        if (word.length >= 3) { // Skip short words like "Dr", "Mr", etc.
+          const wordRegex = new RegExp(`\\b${word}\\b`, 'i');
+          if (wordRegex.test(aiResponse)) {
+            isMentioned = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (isMentioned) {
+      // Check if the context suggests the character is PRESENT (not just mentioned)
+      // Look for presence indicators near the character name
+      const presenceIndicators = [
+        'is here', 'stands', 'sitting', 'working', 'appears', 'notices you',
+        'looks at', 'says', 'replies', 'asks', 'tells', 'explains', 'greets',
+        'approaches', 'enters', 'arrives', 'waiting', 'busy', 'focused',
+        'turns to', 'glances', 'watches', 'observes', 'nods', 'shakes',
+        'gestures', 'points', 'shows', 'hands you', 'offers', 'gives'
+      ];
+
+      const nameIndex = responseLower.indexOf(nameLower);
+      const contextStart = Math.max(0, nameIndex - 50);
+      const contextEnd = Math.min(responseLower.length, nameIndex + nameLower.length + 100);
+      const context = responseLower.substring(contextStart, contextEnd);
+
+      const isPresent = presenceIndicators.some(indicator => context.includes(indicator));
+
+      if (isPresent) {
+        // Move the character to this room
+        const previousRoom = character.currentRoom?.name || null;
+
+        await prisma.character.update({
+          where: { id: character.id },
+          data: { currentRoomId: roomId },
+        });
+
+        movedCharacters.push({
+          name: character.name,
+          movedFrom: previousRoom,
+        });
+
+        console.log(`Character "${character.name}" moved to room (mentioned in AI response)`);
+      }
+    }
+  }
+
+  return movedCharacters;
 }

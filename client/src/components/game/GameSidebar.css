@@ -7,7 +7,7 @@
   height: 100%;
   padding: 0.5rem;
   font-family: 'IBM Plex Mono', 'Courier New', monospace;
-  font-size: 0.75rem;
+  font-size: 0.825rem;
   color: var(--color-primary);
   border-left: 1px solid var(--color-primary-dim);
   overflow: hidden;
@@ -68,7 +68,7 @@
 
 .sidebar-title {
   margin: 0 0 0.25rem 0;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: bold;
   color: var(--color-primary-bright);
   text-shadow: 0 0 8px var(--color-primary-glow);
@@ -83,7 +83,7 @@
 
 .trait-tag {
   padding: 0.1rem 0.3rem;
-  font-size: 0.55rem;
+  font-size: 0.6rem;
   background: rgba(51, 255, 51, 0.1);
   border: 1px solid var(--color-primary-dim);
   border-radius: 2px;
@@ -92,7 +92,7 @@
 /* Section Headers */
 .section-header {
   margin: 0 0 0.25rem 0;
-  font-size: 0.6rem;
+  font-size: 0.66rem;
   font-weight: bold;
   color: var(--color-primary-dim);
   letter-spacing: 0.1em;
@@ -103,7 +103,7 @@
 
 /* Empty section placeholder */
 .empty-section {
-  font-size: 0.6rem;
+  font-size: 0.66rem;
   color: var(--color-primary-dim);
   font-style: italic;
   opacity: 0.6;
@@ -132,7 +132,7 @@
   gap: 0.2rem;
   align-items: center;
   margin-bottom: 0.2rem;
-  font-size: 0.6rem;
+  font-size: 0.66rem;
 }
 
 .ability-name {
@@ -143,7 +143,7 @@
 
 .ability-level {
   color: var(--color-primary-dim);
-  font-size: 0.55rem;
+  font-size: 0.6rem;
   /* Reduce CRT blur on small level text */
   text-shadow: 0 0 1px var(--color-primary-dim) !important;
   animation: none !important;
@@ -184,7 +184,7 @@
 
 .inventory-item {
   padding: 0.15rem 0.25rem;
-  font-size: 0.6rem;
+  font-size: 0.66rem;
   margin-bottom: 0.15rem;
   background: rgba(51, 255, 51, 0.05);
   border-left: 2px solid var(--color-primary-dim);
@@ -218,7 +218,7 @@
 
 .objective-item {
   padding: 0.15rem 0;
-  font-size: 0.6rem;
+  font-size: 0.66rem;
   margin-bottom: 0.15rem;
   display: flex;
   align-items: flex-start;
@@ -230,7 +230,7 @@
 }
 
 .objective-name {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: bold;
   color: var(--color-primary);
   margin-bottom: 0.2rem;
@@ -247,7 +247,7 @@
   display: flex;
   align-items: flex-start;
   gap: 0.2rem;
-  font-size: 0.55rem;
+  font-size: 0.72rem;
   margin-bottom: 0.1rem;
   color: var(--color-primary-dim);
 }
@@ -255,6 +255,14 @@
 .objective-step.completed {
   opacity: 0.5;
 }
+
+/* Reduce CRT blur on objective text for readability */
+  .objective-name,
+  .objective-step,
+  .step-checkbox {
+    text-shadow: 0 0 1px var(--color-primary-dim) !important;
+    animation: none !important;
+  }
 
 .step-checkbox {
   flex-shrink: 0;
@@ -275,10 +283,54 @@
   height: 100%;
 }
 
+.map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.map-header .section-header {
+  margin: 0;
+}
+
+.map-zoom-controls {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.zoom-button {
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  background: rgba(51, 255, 51, 0.1);
+  border: 1px solid var(--color-primary-dim);
+  border-radius: 2px;
+  color: var(--color-primary);
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 0.875rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.zoom-button:hover:not(:disabled) {
+  background: rgba(51, 255, 51, 0.25);
+  border-color: var(--color-primary);
+}
+
+.zoom-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 .ascii-map {
   margin: 0;
   padding: 0.25rem;
-  font-size: 0.5rem;
+  font-size: 0.93rem;
   line-height: 1.15;
   font-family: 'IBM Plex Mono', 'Courier New', monospace;
   background: rgba(0, 0, 0, 0.3);
@@ -293,7 +345,7 @@
 }
 
 .ascii-map div {
-  min-height: 0.7rem;
+  min-height: 1.29rem;
 }
 
 .map-legend {
@@ -301,7 +353,7 @@
   justify-content: space-around;
   margin-top: 0.25rem;
   padding-top: 0.2rem;
-  font-size: 0.5rem;
+  font-size: 0.93rem;
   color: var(--color-primary-dim);
   flex-shrink: 0;
   /* Reduce CRT blur on small legend text */

@@ -19,19 +19,41 @@ export default function GameScreen() {
   const setInputPlaceholder = useGameStore((state) => state.setInputPlaceholder);
   const currentStoryId = useGameStore((state) => state.currentStoryId);
 
-  const initialized = useRef(false);
+  // Track which storyId we've initialized (not just boolean)
+  const initializedStoryId = useRef<string | null>(null);
   const [activeDilemma, setActiveDilemma] = useState<ActiveDilemma | null>(null);
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
 
-  // Initialize the game - fetch initial state
+  // Clear messages from interview when entering game screen
+  const clearMessages = useGameStore((state) => state.clearMessages);
+
+  // Initialize the game - fetch opening narrative and initial state
   useEffect(() => {
-    if (initialized.current || !currentStoryId) return;
-    initialized.current = true;
+    if (!currentStoryId || initializedStoryId.current === currentStoryId) return;
+    initializedStoryId.current = currentStoryId;
+
+    // Clear any leftover messages from interview
+    clearMessages();
 
     const initGame = async () => {
       try {
-        // Get the initial game state
-        const state = await apiClient.getGameState(currentStoryId);
+        // Fetch opening narrative and game state in parallel
+        const [opening, state] = await Promise.all([
+          apiClient.getOpening(currentStoryId),
+          apiClient.getGameState(currentStoryId),
+        ]);
+
+        // Display story title
+        if (opening.storyTitle) {
+          addMessage({
+            type: 'system',
+            content: opening.storyTitle.toUpperCase(),
+          });
+          addMessage({
+            type: 'system',
+            content: '',
+          });
+        }
 
         // Display chapter header
         addMessage({
@@ -40,12 +62,43 @@ export default function GameScreen() {
         });
         addMessage({
           type: 'system',
-          content: 'CHAPTER I',
+          content: opening.chapterTitle || `CHAPTER ${opening.chapterNumber || 'I'}`,
         });
         addMessage({
           type: 'system',
           content: '═══════════════════════════════════════',
         });
+
+        // Display opening narrative - the main story introduction
+        if (opening.openingNarrative) {
+          // Split into paragraphs and display each
+          const paragraphs = opening.openingNarrative.split('\n\n').filter(p => p.trim());
+          for (const paragraph of paragraphs) {
+            addMessage({
+              type: 'narrator',
+              content: paragraph.trim(),
+              isTyping: true,
+            });
+          }
+        }
+
+        // Add a separator before room details
+        addMessage({
+          type: 'system',
+          content: '',
+        });
+
+        // Display initial objective if available
+        if (opening.initialObjective) {
+          addMessage({
+            type: 'system',
+            content: `Your objective: ${opening.initialObjective}`,
+          });
+          addMessage({
+            type: 'system',
+            content: '',
+          });
+        }
 
         // Display room info
         addMessage({
@@ -92,6 +145,29 @@ export default function GameScreen() {
           });
         }
 
+        // Show immediate choices if available
+        if (opening.immediateChoices && opening.immediateChoices.length > 0) {
+          addMessage({
+            type: 'system',
+            content: '',
+          });
+          addMessage({
+            type: 'system',
+            content: 'You might want to:',
+          });
+          for (const choice of opening.immediateChoices) {
+            addMessage({
+              type: 'system',
+              content: `  • ${choice}`,
+              isTyping: false,
+            });
+          }
+        }
+
+        addMessage({
+          type: 'system',
+          content: '',
+        });
         addMessage({
           type: 'system',
           content: 'Type HELP for a list of commands.',
@@ -113,7 +189,7 @@ export default function GameScreen() {
     };
 
     initGame();
-  }, [currentStoryId, addMessage, setInputEnabled, setInputPlaceholder]);
+  }, [currentStoryId, addMessage, setInputEnabled, setInputPlaceholder, clearMessages]);
 
   const handlePlayerInput = useCallback(async (input: string) => {
     if (!currentStoryId) {
@@ -141,18 +217,23 @@ export default function GameScreen() {
       else if (upperInput === 'C' || upperInput === '3') chosenOption = 'C';
 
       try {
-        await apiClient.submitDilemmaResponse({
+        const result = await apiClient.submitDilemmaResponse({
           storyId: currentStoryId,
           dilemmaId: activeDilemma.id,
           chosenOption,
           playerResponse: input,
         });
 
+        // Display the outcome narrative
+        const outcomeText = result.outcomeNarrative || 'Your choice has been made. The story continues...';
         addMessage({
           type: 'narrator',
-          content: 'Your choice has been made. The story continues...',
+          content: outcomeText,
           isTyping: true,
         });
+
+        // Refresh sidebar after dilemma choice
+        setSidebarRefresh(prev => prev + 1);
 
         setActiveDilemma(null);
         setInputPlaceholder('What do you do?');

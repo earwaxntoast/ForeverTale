@@ -196,6 +196,18 @@ REQUIREMENTS:
 6. Ensure the map is navigable - no isolated rooms
 7. Use z-coordinate for different levels (0 = ground, positive = up, negative = down)
 
+VEHICLES (if appropriate for the setting):
+- Consider adding 0-3 vehicles that make sense for the story's setting
+- Vehicles are ROOMS that players can enter and travel between locations
+- Good vehicle examples by setting:
+  - Fantasy: ship, carriage, flying carpet, dragon mount
+  - Sci-fi: spaceship, hovercraft, teleporter pod
+  - Modern: car, boat, subway, elevator
+  - Historical: wagon, steamship, hot air balloon
+- Vehicles should be docked at a room that makes thematic sense (boat at dock, car at garage)
+- Only include vehicles if they enhance the story - not every story needs them
+- Vehicles use z=180-199 coordinates (this range is reserved for vehicles)
+
 Return ONLY valid JSON:
 {
   "mapTheme": "Overall description of the map's theme and feel",
@@ -214,6 +226,24 @@ Return ONLY valid JSON:
         "smells": "old parchment"
       },
       "exits": { "north": true, "east": true } // which directions have exits
+    },
+    {
+      "name": "Old Fishing Boat",
+      "x": 0, "y": 0, "z": 180,
+      "briefDescription": "A weathered but seaworthy vessel",
+      "thematicRole": "resource",
+      "isStoryCritical": false,
+      "isVehicle": true,
+      "vehicleType": "water",
+      "boardingKeywords": ["boat", "vessel", "ship"],
+      "dockedAtRoomName": "The Docks",
+      "suggestedAtmosphere": {
+        "lighting": "natural light filtering through weathered planks",
+        "mood": "adventure and possibility",
+        "sounds": "creaking wood, lapping water",
+        "smells": "salt air and old rope"
+      },
+      "exits": {}
     }
   ]
 }`;
@@ -286,6 +316,16 @@ REQUIREMENTS:
    - If there's a window showing a garden, the garden room should mention the window
 3. Add 2-4 objects per room that fit the theme
 4. Ensure atmospheric coherence between connected rooms
+5. Mark 15-25% of exits as HIDDEN - these are secret passages, concealed doors, or paths that must be discovered
+   - Hidden exits should NOT be mentioned in the room description until discovered
+   - Include "hiddenUntil" describing what reveals it (e.g., "examine bookcase", "use key on wall", "complete puzzle X")
+   - Hidden exits create mystery and reward exploration
+
+VEHICLES (if any rooms have isVehicle=true):
+- Include interior description of the vehicle
+- For each vehicle, specify "knownDestinationRoomNames" - places it can travel to
+- Destinations should make thematic sense (boats go to docks/ports, cars to roads/towns)
+- Include 2-4 destinations per vehicle, matching the vehicle type
 
 Return ONLY valid JSON:
 {
@@ -304,15 +344,51 @@ Return ONLY valid JSON:
           "direction": "north",
           "targetRoomName": "Adjacent Room Name",
           "descriptionFromHere": "A heavy oak door leads north, its surface carved with...",
-          "descriptionFromThere": "A heavy oak door leads south, matching carvings visible from this side..."
+          "descriptionFromThere": "A heavy oak door leads south, matching carvings visible from this side...",
+          "isHidden": false
+        },
+        {
+          "direction": "east",
+          "targetRoomName": "Secret Room",
+          "descriptionFromHere": "Behind the bookcase, a narrow passage leads east...",
+          "descriptionFromThere": "A cramped passage leads west, ending at what looks like the back of a bookcase...",
+          "isHidden": true,
+          "hiddenUntil": "examine bookcase"
         }
       ],
       "objects": [
-        { "name": "Object Name", "description": "Description", "isTakeable": false, "isStoryCritical": false }
+        { "name": "Object Name", "description": "Description", "synonyms": ["alt1", "alt2"], "isTakeable": false, "isStoryCritical": false }
+      ]
+    },
+    {
+      "name": "Old Fishing Boat",
+      "x": 0, "y": 0, "z": 180,
+      "briefDescription": "A weathered but seaworthy vessel",
+      "fullDescription": "The deck creaks beneath your feet as you step aboard this weathered fishing vessel. Salt-stained ropes coil near the mast, and a small cabin offers shelter from the elements. Despite its age, the boat seems sturdy enough for coastal waters.\n\nA ship's wheel stands at the stern, its wood polished smooth by years of use. Charts are pinned to a board nearby, showing various ports along the coast.",
+      "thematicRole": "resource",
+      "isStoryCritical": false,
+      "isVehicle": true,
+      "vehicleType": "water",
+      "boardingKeywords": ["boat", "vessel", "ship"],
+      "dockedAtRoomName": "The Docks",
+      "knownDestinationRoomNames": ["Lighthouse Point", "Hidden Cove", "The Docks"],
+      "suggestedAtmosphere": { "lighting": "natural", "mood": "adventurous", "sounds": "creaking wood", "smells": "salt air" },
+      "exits": {},
+      "connectionDescriptions": [],
+      "objects": [
+        { "name": "Ship's Wheel", "description": "A well-worn wooden wheel for steering the vessel", "synonyms": ["wheel", "helm", "steering wheel"], "isTakeable": false, "isStoryCritical": false },
+        { "name": "Navigation Charts", "description": "Worn charts showing coastal destinations", "synonyms": ["charts", "maps", "sea charts"], "isTakeable": true, "isStoryCritical": false }
       ]
     }
   ]
-}`;
+}
+
+IMPORTANT - OBJECT SYNONYMS:
+Each object MUST include "synonyms" - an array of 2-4 alternative names players might use to refer to the object.
+Examples:
+- "Brass Lantern" → synonyms: ["lantern", "lamp", "light", "brass lamp"]
+- "Worn Journal" → synonyms: ["journal", "diary", "book", "notebook"]
+- "Antique Key" → synonyms: ["key", "brass key", "old key"]`;
 
   const response = await anthropic.messages.create({
     model: MODEL,
@@ -485,15 +561,18 @@ Return ONLY valid JSON:
       "triggerCondition": "Optional condition like 'after talking to X'",
       "optionA": {
         "description": "First choice",
-        "personalityImplication": "What this choice reveals (e.g., 'Shows high openness')"
+        "personalityImplication": "What this choice reveals (e.g., 'Shows high openness')",
+        "outcomeNarrative": "2-3 sentences describing what happens when this choice is made"
       },
       "optionB": {
         "description": "Second choice",
-        "personalityImplication": "What this choice reveals"
+        "personalityImplication": "What this choice reveals",
+        "outcomeNarrative": "2-3 sentences describing what happens when this choice is made"
       },
       "optionC": {
         "description": "Optional third choice",
-        "personalityImplication": "What this choice reveals"
+        "personalityImplication": "What this choice reveals",
+        "outcomeNarrative": "2-3 sentences describing what happens when this choice is made"
       }
     }
   ]
@@ -516,8 +595,10 @@ export async function generatePuzzles(context: GenerationContext): Promise<Puzzl
   const connectingAreas = context.stepData.connectingAreas!;
   const characters = context.stepData.characters!;
   const dilemmas = context.stepData.dilemmas!;
+  const initialMap = context.stepData.initialMap!;
 
   const rooms = connectingAreas.rooms;
+  const startingRoom = rooms[initialMap.startingRoomIndex]?.name || rooms[0].name;
   const characterNames = characters.characters.map(c => `${c.name} (${c.role}, in ${c.startingRoomName})`);
   const dilemmaNames = dilemmas.dilemmas.map(d => `${d.name} (${d.triggerRoomName})`);
 
@@ -527,6 +608,8 @@ STORY IDENTITY:
 - Title: ${identity.title}
 - Tone: ${identity.tone}
 - Themes: ${identity.keyThemes.join(', ')}
+
+STARTING ROOM: ${startingRoom}
 
 ROOMS AND OBJECTS:
 ${rooms.map(r => `- ${r.name} (${r.thematicRole}): ${r.objects.map(o => o.name).join(', ')}`).join('\n')}
@@ -544,9 +627,33 @@ REQUIREMENTS:
 6. Rewards can be: item, skill_boost, dilemma, secret_reveal, room_unlock, character_info
 7. Some steps can have timed urgency (X turns to complete)
 
+CRITICAL - STEP DESCRIPTIONS MUST BE CRYPTIC:
+Step descriptions tell the player WHAT to interact with, NOT how or why.
+Stop BEFORE infinitive phrases ("to + verb"), participial phrases ("using/with/by"), or purpose clauses.
+
+BAD (too verbose - spoils the puzzle):
+- "Access the Terminal to view the incoming transmission"
+- "Reference the Codebook to identify the encryption pattern"
+- "Print the message using the Thermal Printer"
+
+GOOD (cryptic - preserves mystery):
+- "Access the Terminal"
+- "Reference the Codebook"
+- "Print the message"
+
+Name the object/character/action. Let players discover the purpose themselves.
+
+PUZZLE DISCOVERY SETTINGS:
+- EXACTLY ONE puzzle must have "isInitialObjective": true - this is the player's starting objective
+  - The initial objective MUST be in or related to the starting room (${startingRoom})
+  - It should be clearly presented to the player and make sense as a first goal
+- Some puzzles should have "discoversOnRoomEntry": true - these are immediately apparent when entering the room
+  - Examples: room is on fire, door locks behind you, obvious threat, urgent situation
+  - Most puzzles should have this as false (discovered via finding related items/actions)
+
 PUZZLE CHAIN STRUCTURE:
-- Start with simple puzzles that unlock medium ones
-- Medium puzzles lead to complex ones
+- Start with the initial objective that leads to other puzzles
+- Completing puzzles reveals/unlocks connected puzzles
 - Complex puzzles trigger dilemmas
 
 Return ONLY valid JSON:
@@ -559,7 +666,7 @@ Return ONLY valid JSON:
       "steps": [
         {
           "stepNumber": 1,
-          "description": "What player needs to do",
+          "description": "Examine the locked chest", // CRYPTIC: object only, no purpose
           "hint": "Optional hint",
           "requirements": {
             "requiredItems": ["item name"],
@@ -574,7 +681,9 @@ Return ONLY valid JSON:
         "data": { "itemName": "Key", "description": "A brass key" }
       },
       "leadsToDilemma": "Dilemma Name", // optional
-      "prerequisites": ["Other Puzzle Name"] // optional
+      "prerequisites": ["Other Puzzle Name"], // optional
+      "isInitialObjective": false, // true for EXACTLY ONE puzzle - the starting objective
+      "discoversOnRoomEntry": false // true if puzzle is immediately obvious when entering room
     }
   ],
   "puzzleChains": [

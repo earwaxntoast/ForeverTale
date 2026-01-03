@@ -10,6 +10,7 @@ import * as puzzleService from '../services/game/puzzleService.js';
 import {
   StoryGenerationOrchestrator,
   persistGeneratedStory,
+  generateThemedName,
   GenerationProgress,
 } from '../services/ai/storyGeneration/index.js';
 
@@ -105,13 +106,16 @@ router.post('/', async (req: Request, res: Response) => {
       // Persist all generated data to the database
       await persistGeneratedStory(story.id, playerName, allData);
 
+      // Generate a story-themed name for the player character
+      await generateThemedName(story.id, playerName, allData);
+
       // Update story status to indicate completion
       await prisma.story.update({
         where: { id: story.id },
         data: { status: 'completed' },
       });
 
-      // Emit final completion event
+      // Emit final completion event (data is now persisted and ready)
       const emitter = progressEmitters.get(story.id);
       if (emitter) {
         emitter({
@@ -121,6 +125,11 @@ router.post('/', async (req: Request, res: Response) => {
           stepDescription: 'Complete',
           themedNarrative: 'Your story awaits...',
           isComplete: true,
+          logMessages: [
+            '[BOOT] Story data persisted',
+            '[BOOT] Consciousness transfer ready...',
+            '[DONE] Your story awaits...',
+          ],
         });
       }
     } catch (genError) {
@@ -255,17 +264,20 @@ router.post('/:id/scenes', async (req: Request, res: Response) => {
 // Handle dilemma response
 router.post('/:id/dilemma/:dilemmaId', async (req: Request, res: Response) => {
   try {
-    const { storyId, dilemmaId } = req.params;
+    const { dilemmaId } = req.params;
     const { chosenOption, playerResponse } = req.body;
 
-    await gameEngine.handleDilemmaResponse(
+    const result = await gameEngine.handleDilemmaResponse(
       req.params.id,
       dilemmaId,
       chosenOption,
       playerResponse
     );
 
-    return res.json({ success: true });
+    return res.json({
+      success: true,
+      outcomeNarrative: result.outcomeNarrative,
+    });
   } catch (error) {
     console.error('Dilemma response error:', error);
     return res.status(500).json({ error: 'Failed to process dilemma response' });
@@ -296,17 +308,18 @@ router.get('/:id/state', async (req: Request, res: Response) => {
   }
 });
 
-// Get sidebar data (character info, stats, notes, map)
-router.get('/:id/sidebar', async (req: Request, res: Response) => {
+// Get opening scene for game start
+router.get('/:id/opening', async (req: Request, res: Response) => {
   try {
     const storyId = req.params.id;
 
-    // Get story with initial interview (for player name)
+    // Get story with opening data from storySeed
     const story = await prisma.story.findUnique({
       where: { id: storyId },
       select: {
-        initialInterview: true,
+        title: true,
         storySeed: true,
+        currentChapterId: true,
       },
     });
 
@@ -314,18 +327,82 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Story not found' });
     }
 
-    // Get player name from interview
-    const interview = story.initialInterview as Array<{ question: string; answer: string }> | null;
-    const nameAnswer = interview?.find(e =>
-      e.question.toLowerCase().includes('name') ||
-      e.question.toLowerCase().includes('call you')
-    );
-    const playerName = nameAnswer?.answer || 'Traveler';
+    // Get chapter info if available
+    let chapterInfo: { title: string | null; chapterNumber: number; openingNarrative: string | null } | null = null;
+    if (story.currentChapterId) {
+      const chapter = await prisma.chapter.findUnique({
+        where: { id: story.currentChapterId },
+        select: {
+          title: true,
+          chapterNumber: true,
+          scenes: {
+            where: { sceneNumber: 1 },
+            select: { narrativeText: true },
+            take: 1,
+          },
+        },
+      });
+      if (chapter) {
+        chapterInfo = {
+          title: chapter.title,
+          chapterNumber: chapter.chapterNumber,
+          openingNarrative: chapter.scenes[0]?.narrativeText || null,
+        };
+      }
+    }
 
-    // Get character backstory
+    // Extract opening data from storySeed
+    const seed = story.storySeed as {
+      opening?: {
+        openingNarrative: string;
+        initialObjective: string;
+        immediateChoices: string[];
+      };
+      identity?: {
+        title: string;
+      };
+    } | null;
+
+    const openingNarrative = chapterInfo?.openingNarrative
+      || seed?.opening?.openingNarrative
+      || 'Your journey begins...';
+
+    return res.json({
+      storyTitle: story.title || seed?.identity?.title || 'Untitled Story',
+      chapterTitle: chapterInfo?.title || 'The Beginning',
+      chapterNumber: chapterInfo?.chapterNumber || 1,
+      openingNarrative,
+      initialObjective: seed?.opening?.initialObjective || null,
+      immediateChoices: seed?.opening?.immediateChoices || [],
+    });
+  } catch (error) {
+    console.error('Get opening error:', error);
+    return res.status(500).json({ error: 'Failed to get opening' });
+  }
+});
+
+// Get sidebar data (character info, stats, notes, map)
+router.get('/:id/sidebar', async (req: Request, res: Response) => {
+  try {
+    const storyId = req.params.id;
+
+    // Verify story exists
+    const story = await prisma.story.findUnique({
+      where: { id: storyId },
+      select: { id: true },
+    });
+
+    if (!story) {
+      return res.status(404).json({ error: 'Story not found' });
+    }
+
+    // Get character backstory (includes the themed name)
     const backstory = await prisma.characterBackstory.findFirst({
       where: { storyId },
     });
+
+    // Use the stored name from backstory (themed name generated during story creation)
+    const playerName = backstory?.name || 'Traveler';
 
     // Get abilities/skills
     const abilities = await prisma.playerAbility.findMany({
@@ -403,28 +480,82 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
         firstVisitedAt: true,
         visitCount: true,
         atmosphere: true,
+        hiddenExits: true,
+        discoveredExits: true,
+        // Vehicle fields
+        isVehicle: true,
+        dockedAtRoomId: true,
       },
     });
 
-    // Build map data
-    const mapData = rooms.map(room => ({
-      id: room.id,
-      name: room.name,
-      x: room.x,
-      y: room.y,
-      z: room.z,
-      isVisited: room.visitCount > 0 || room.firstVisitedAt !== null,
-      isCurrent: room.id === playerState?.currentRoomId,
-      hasPortal: !!(room.atmosphere as Record<string, unknown>)?.portalTo,
-      exits: {
-        north: !!room.northRoomId,
-        south: !!room.southRoomId,
-        east: !!room.eastRoomId,
-        west: !!room.westRoomId,
-        up: !!room.upRoomId,
-        down: !!room.downRoomId,
-      },
-    }));
+    // Build a lookup for room coordinates (for placing vehicles at docked locations)
+    const roomCoords = new Map<string, { x: number; y: number; z: number }>();
+    for (const room of rooms) {
+      roomCoords.set(room.id, { x: room.x, y: room.y, z: room.z });
+    }
+
+    // Check if player is currently in a vehicle
+    const currentRoom = rooms.find(r => r.id === playerState?.currentRoomId);
+    const playerInVehicle = currentRoom?.isVehicle || false;
+
+    // Build map data - only include visited rooms (and exclude undocked vehicles)
+    const mapData = rooms
+      .filter(room => {
+        // Include if visited or is current room
+        const isVisitedOrCurrent = room.visitCount > 0 || room.firstVisitedAt !== null || room.id === playerState?.currentRoomId;
+        if (!isVisitedOrCurrent) return false;
+
+        // For vehicles, only show if docked somewhere
+        if (room.isVehicle && !room.dockedAtRoomId) return false;
+
+        return true;
+      })
+      .map(room => {
+        const hiddenExits = (room.hiddenExits as string[]) || [];
+        const discoveredExits = (room.discoveredExits as string[]) || [];
+
+        // An exit is visible if: it exists AND (it's not hidden OR it has been discovered)
+        const isExitVisible = (direction: string, roomId: string | null): boolean => {
+          if (!roomId) return false;
+          const isHidden = hiddenExits.includes(direction);
+          const isDiscovered = discoveredExits.includes(direction);
+          return !isHidden || isDiscovered;
+        };
+
+        // For vehicles, use the docked location's coordinates
+        let displayX = room.x;
+        let displayY = room.y;
+        let displayZ = room.z;
+
+        if (room.isVehicle && room.dockedAtRoomId) {
+          const dockedCoords = roomCoords.get(room.dockedAtRoomId);
+          if (dockedCoords) {
+            displayX = dockedCoords.x;
+            displayY = dockedCoords.y;
+            displayZ = dockedCoords.z;
+          }
+        }
+
+        return {
+          id: room.id,
+          name: room.name,
+          x: displayX,
+          y: displayY,
+          z: displayZ,
+          isVisited: room.visitCount > 0 || room.firstVisitedAt !== null,
+          isCurrent: room.id === playerState?.currentRoomId,
+          hasPortal: !!(room.atmosphere as Record<string, unknown>)?.portalTo,
+          isVehicle: room.isVehicle || false,
+          exits: {
+            north: isExitVisible('north', room.northRoomId),
+            south: isExitVisible('south', room.southRoomId),
+            east: isExitVisible('east', room.eastRoomId),
+            west: isExitVisible('west', room.westRoomId),
+            up: isExitVisible('up', room.upRoomId),
+            down: isExitVisible('down', room.downRoomId),
+          },
+        };
+      });
 
     // Get active objectives from puzzles
     const objectives = await puzzleService.getObjectives(storyId);
@@ -463,6 +594,7 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
       })),
       map: mapData,
       currentRoomId: playerState?.currentRoomId,
+      playerInVehicle,  // True if player is currently inside a vehicle
     });
   } catch (error) {
     console.error('Get sidebar error:', error);

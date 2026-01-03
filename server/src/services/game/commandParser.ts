@@ -2,8 +2,12 @@ import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import * as roomService from './roomService';
 import * as objectService from './objectService';
+import { objectMatchesName } from './objectService';
 import * as skillService from './skillService';
-import { processCommand as aiProcessCommand, generateSpectacularNarrative, extractAndCreateDiscoveredItems, extractAndCreateDiscoveredPassages, extractAndCreateTimedEvents } from '../ai/gameAI';
+import * as puzzleService from './puzzleService';
+import * as vehicleService from './vehicleService';
+import * as stateService from './stateService';
+import { processCommand as aiProcessCommand, generateSpectacularNarrative, extractAndCreateDiscoveredItems, extractAndCreateDiscoveredPassages, extractAndCreateTimedEvents, updateCharacterPresence } from '../ai/gameAI';
 
 const prisma = new PrismaClient();
 
@@ -17,6 +21,9 @@ export type CommandType =
   | 'INVENTORY'
   | 'TALK'
   | 'HELP'
+  | 'BOARD'
+  | 'DISEMBARK'
+  | 'LAUNCH'
   | 'UNKNOWN';
 
 export interface ParsedCommand {
@@ -39,6 +46,9 @@ export interface CommandResult {
     choiceContext?: string;
     alternatives?: string[];
   };
+  // Vehicle-related menu options (for destination selection)
+  menuOptions?: Array<{ id: string; name: string }>;
+  menuType?: 'destination';  // Type of menu for UI handling
 }
 
 // Direction aliases
@@ -113,6 +123,32 @@ const COMMAND_PATTERNS: Array<{ pattern: RegExp; type: CommandType; targetGroup?
   { pattern: /^speak\s+to\s+(.+)$/i, type: 'TALK', targetGroup: 1 },
   { pattern: /^speak\s+with\s+(.+)$/i, type: 'TALK', targetGroup: 1 },
   { pattern: /^ask\s+(.+)$/i, type: 'TALK', targetGroup: 1 },
+
+  // Vehicle - Boarding
+  { pattern: /^board\s+(.+)$/i, type: 'BOARD', targetGroup: 1 },
+  { pattern: /^board$/i, type: 'BOARD' },
+  { pattern: /^enter\s+(.+)$/i, type: 'BOARD', targetGroup: 1 },
+  { pattern: /^get\s+in\s+(.+)$/i, type: 'BOARD', targetGroup: 1 },
+  { pattern: /^get\s+into\s+(.+)$/i, type: 'BOARD', targetGroup: 1 },
+  { pattern: /^climb\s+into\s+(.+)$/i, type: 'BOARD', targetGroup: 1 },
+  { pattern: /^climb\s+aboard\s+(.+)$/i, type: 'BOARD', targetGroup: 1 },
+
+  // Vehicle - Disembarking
+  { pattern: /^disembark$/i, type: 'DISEMBARK' },
+  { pattern: /^exit$/i, type: 'DISEMBARK' },
+  { pattern: /^leave\s+vehicle$/i, type: 'DISEMBARK' },
+  { pattern: /^get\s+out$/i, type: 'DISEMBARK' },
+  { pattern: /^get\s+off$/i, type: 'DISEMBARK' },
+  { pattern: /^climb\s+out$/i, type: 'DISEMBARK' },
+
+  // Vehicle - Launching/Traveling
+  { pattern: /^launch$/i, type: 'LAUNCH' },
+  { pattern: /^launch\s+to\s+(.+)$/i, type: 'LAUNCH', targetGroup: 1 },
+  { pattern: /^sail\s+to\s+(.+)$/i, type: 'LAUNCH', targetGroup: 1 },
+  { pattern: /^drive\s+to\s+(.+)$/i, type: 'LAUNCH', targetGroup: 1 },
+  { pattern: /^fly\s+to\s+(.+)$/i, type: 'LAUNCH', targetGroup: 1 },
+  { pattern: /^travel\s+to\s+(.+)$/i, type: 'LAUNCH', targetGroup: 1 },
+  { pattern: /^go\s+back$/i, type: 'LAUNCH', targetGroup: 0 },  // Special: go back to previous location
 
   // Help
   { pattern: /^help$/i, type: 'HELP' },
@@ -251,6 +287,15 @@ export async function executeCommand(
     case 'TALK':
       return handleTalk(storyId, currentRoom, command);
 
+    case 'BOARD':
+      return handleBoard(storyId, currentRoom, command);
+
+    case 'DISEMBARK':
+      return handleDisembark(storyId, currentRoom);
+
+    case 'LAUNCH':
+      return handleLaunch(storyId, currentRoom, command);
+
     case 'HELP':
       return handleHelp();
 
@@ -301,9 +346,34 @@ async function handleGo(
 
   const formattedDescription = roomService.formatRoomDescription(newRoom, description, isFirstVisit);
 
+  // Extract and create any items mentioned in the room description
+  // This is especially important on first visit
+  const existingNames = newRoom.gameObjects?.map((o: { name: string }) => o.name) || [];
+  const newItems = await extractAndCreateDiscoveredItems(
+    storyId,
+    newRoom.id,
+    description,
+    existingNames
+  );
+
+  // Check for puzzles that auto-discover on room entry
+  const roomDiscovery = await puzzleService.discoverPuzzlesOnRoomEntry(storyId, newRoom.id);
+
+  // If new items were discovered from the description, append a notice
+  let response = formattedDescription;
+  if (newItems.length > 0) {
+    const itemNames = newItems.map(i => i.name).join(', ');
+    response += `\n\n[You notice: ${itemNames}]`;
+  }
+
+  // Append any puzzle discovery narratives
+  if (roomDiscovery.narratives.length > 0) {
+    response += '\n\n' + roomDiscovery.narratives.join('\n');
+  }
+
   return {
     success: true,
-    response: formattedDescription,
+    response,
     roomChanged: true,
     newRoomId: newRoom.id,
   };
@@ -319,9 +389,26 @@ async function handleLook(
   const description = currentRoom.description || 'You look around but see nothing remarkable.';
   const formattedDescription = roomService.formatRoomDescription(currentRoom, description, false);
 
+  // Extract and create any items mentioned in the room description
+  // This ensures that items mentioned in descriptions become interactable
+  const existingNames = currentRoom.gameObjects.map(o => o.name);
+  const newItems = await extractAndCreateDiscoveredItems(
+    storyId,
+    currentRoom.id,
+    description,
+    existingNames
+  );
+
+  // If new items were discovered from the description, append a notice
+  let response = formattedDescription;
+  if (newItems.length > 0) {
+    const itemNames = newItems.map(i => i.name).join(', ');
+    response += `\n\n[You notice: ${itemNames}]`;
+  }
+
   return {
     success: true,
-    response: formattedDescription,
+    response,
   };
 }
 
@@ -340,11 +427,11 @@ async function handleExamine(
     };
   }
 
-  // Look for matching object in room or inventory
+  // Look for matching object in room or inventory (includes synonym matching)
   const inventory = await objectService.getInventory(storyId);
   const allObjects = [...currentRoom.gameObjects, ...inventory];
   const matchingObject = allObjects.find(
-    obj => obj.name.toLowerCase().includes(command.target!)
+    obj => objectMatchesName(obj, command.target!)
   );
 
   if (matchingObject) {
@@ -393,6 +480,9 @@ async function handleExamine(
     existingNames
   );
 
+  // Update character presence based on AI response
+  await updateCharacterPresence(storyId, currentRoom.id, aiResult.response);
+
   // If items were discovered, append a hint to the response
   let response = aiResult.response;
   if (newItems.length > 0) {
@@ -423,6 +513,12 @@ async function handleTake(
   }
 
   const result = await objectService.takeObject(storyId, currentRoom.id, command.target);
+
+  // Append discovery narratives to response if any
+  if (result.discoveryNarratives && result.discoveryNarratives.length > 0) {
+    result.response += '\n\n' + result.discoveryNarratives.join('\n');
+  }
+
   return result;
 }
 
@@ -480,11 +576,11 @@ async function handleUse(
     };
   }
 
-  // Find the target object in room or inventory
+  // Find the target object in room or inventory (includes synonym matching)
   const inventory = await objectService.getInventory(storyId);
   const allObjects = [...currentRoom.gameObjects, ...inventory];
   const matchingObject = allObjects.find(
-    obj => obj.name.toLowerCase().includes(command.target!)
+    obj => objectMatchesName(obj, command.target!)
   );
 
   // Use AI for creative use/read/open etc.
@@ -521,6 +617,33 @@ async function handleUse(
     }
   }
 
+  // Evaluate if the action changes the object's physical state
+  let stateChangeNarrative: string | null = null;
+  if (matchingObject) {
+    const stateChange = await stateService.evaluateStateChange(
+      storyId,
+      matchingObject.id,
+      command.rawInput,
+      {
+        roomDescription: currentRoom.description || undefined,
+        otherObjectsInRoom: currentRoom.gameObjects.map(o => o.name),
+        playerInventory: inventory.map(o => o.name),
+      }
+    );
+
+    if (stateChange.changed && stateChange.narrative) {
+      stateChangeNarrative = stateChange.narrative;
+
+      // If system effects occurred, add those narratives too
+      if (stateChange.systemEffects && stateChange.systemEffects.length > 0) {
+        const effectNarratives = stateChange.systemEffects
+          .map(e => `The ${e.objectName} is now ${e.newState}.`)
+          .join(' ');
+        stateChangeNarrative += ' ' + effectNarratives;
+      }
+    }
+  }
+
   // Extract and create any newly discovered items from the AI response
   const existingNames = [...currentRoom.gameObjects, ...inventory].map(o => o.name);
   const newItems = await extractAndCreateDiscoveredItems(
@@ -529,6 +652,9 @@ async function handleUse(
     aiResult.response,
     existingNames
   );
+
+  // Update character presence based on AI response
+  await updateCharacterPresence(storyId, currentRoom.id, aiResult.response);
 
   // Check if a new passage/room was revealed (e.g., opening a door)
   const newPassage = await extractAndCreateDiscoveredPassages(
@@ -546,8 +672,29 @@ async function handleUse(
     command.rawInput
   );
 
+  // Check if this action triggers puzzle discovery
+  const actionDiscovery = await puzzleService.discoverPuzzlesFromAction(storyId, command.rawInput);
+
+  // Check if this action reveals any hidden exits
+  const exitDiscovery = await puzzleService.discoverHiddenExits(storyId, currentRoom.id, command.rawInput);
+
+  // Check if this action completes any puzzle steps
+  const inventoryNames = inventory.map(obj => obj.name);
+  const puzzleCompletion = await puzzleService.checkPuzzleStepCompletion(
+    storyId,
+    command.rawInput,
+    currentRoom.id,
+    inventoryNames
+  );
+
   // Build final response
   let response = aiResult.response;
+
+  // Add state change narrative if object state changed
+  if (stateChangeNarrative) {
+    response += '\n\n' + stateChangeNarrative;
+  }
+
   if (newItems.length > 0) {
     const itemNames = newItems.map(i => i.name).join(', ');
     response += `\n\n[You notice: ${itemNames}]`;
@@ -561,6 +708,15 @@ async function handleUse(
   }
   if (newTimedEvent) {
     response += `\n\n[Event started: ${newTimedEvent.eventName} - ${newTimedEvent.turnsRemaining} turns remaining]`;
+  }
+  if (exitDiscovery.narratives.length > 0) {
+    response += '\n\n' + exitDiscovery.narratives.join('\n');
+  }
+  if (actionDiscovery.narratives.length > 0) {
+    response += '\n\n' + actionDiscovery.narratives.join('\n');
+  }
+  if (puzzleCompletion.narratives.length > 0) {
+    response += '\n\n' + puzzleCompletion.narratives.join('\n');
   }
 
   return {
@@ -604,6 +760,9 @@ async function handleTalk(
     characters: currentRoom.charactersHere,
   });
 
+  // Update character presence based on AI response (in case other characters are mentioned)
+  await updateCharacterPresence(storyId, currentRoom.id, aiResult.response);
+
   return {
     success: true,
     response: aiResult.response,
@@ -622,14 +781,194 @@ AVAILABLE COMMANDS:
   Objects:     TAKE [object], DROP [object], USE [object], USE [object] ON [target]
   Inventory:   INVENTORY (or I)
   Characters:  TALK TO [character]
+  Vehicles:    BOARD [vehicle], DISEMBARK, LAUNCH TO [destination]
   Help:        HELP (or ?)
 
-You can also try other actions - I'll do my best to understand!
+You can also try other actions - Anything goes. There are no limits in this realm.
   `.trim();
 
   return {
     success: true,
     response: helpText,
+  };
+}
+
+/**
+ * Handle BOARD command - board a vehicle
+ */
+async function handleBoard(
+  storyId: string,
+  currentRoom: roomService.RoomWithDetails,
+  command: ParsedCommand
+): Promise<CommandResult> {
+  // Check if there are any vehicles docked here
+  const vehicles = await vehicleService.getDockedVehicles(currentRoom.id);
+
+  if (vehicles.length === 0) {
+    return {
+      success: false,
+      response: "There's no vehicle here to board.",
+    };
+  }
+
+  // If no target specified and only one vehicle, board it
+  const target = command.target || '';
+  const result = await vehicleService.boardVehicle(storyId, currentRoom.id, target);
+
+  if (!result.success) {
+    return {
+      success: false,
+      response: result.narrative,
+    };
+  }
+
+  // Get the vehicle room description
+  const vehicleRoom = result.vehicleRoom!;
+  const description = vehicleRoom.description || `You are aboard the ${vehicleRoom.name}.`;
+  const formattedDescription = roomService.formatRoomDescription(
+    { ...vehicleRoom, gameObjects: [], charactersHere: [] } as roomService.RoomWithDetails,
+    description,
+    true
+  );
+
+  // Check if vehicle is docked somewhere
+  const { dockedAt } = await vehicleService.isPlayerInVehicle(storyId);
+  let response = result.narrative + '\n\n' + formattedDescription;
+
+  if (dockedAt) {
+    response += `\n\n[Docked at: ${dockedAt.name}. Type DISEMBARK to leave or LAUNCH TO [destination] to travel.]`;
+  } else {
+    response += `\n\n[Type LAUNCH TO [destination] to travel, or LAUNCH to see available destinations.]`;
+  }
+
+  return {
+    success: true,
+    response,
+    roomChanged: true,
+    newRoomId: vehicleRoom.id,
+  };
+}
+
+/**
+ * Handle DISEMBARK command - leave a vehicle
+ */
+async function handleDisembark(
+  storyId: string,
+  currentRoom: roomService.RoomWithDetails
+): Promise<CommandResult> {
+  // Check if we're in a vehicle
+  const { inVehicle, dockedAt } = await vehicleService.isPlayerInVehicle(storyId);
+
+  if (!inVehicle) {
+    return {
+      success: false,
+      response: "You're not in a vehicle.",
+    };
+  }
+
+  const result = await vehicleService.disembarkVehicle(storyId);
+
+  if (!result.success) {
+    return {
+      success: false,
+      response: result.narrative,
+    };
+  }
+
+  // Get the destination room description
+  const destRoom = result.destinationRoom!;
+  const destRoomWithDetails = await roomService.getRoom(destRoom.id);
+
+  if (!destRoomWithDetails) {
+    return {
+      success: true,
+      response: result.narrative,
+      roomChanged: true,
+      newRoomId: destRoom.id,
+    };
+  }
+
+  const description = destRoomWithDetails.description || 'You step out of the vehicle.';
+  const formattedDescription = roomService.formatRoomDescription(
+    destRoomWithDetails,
+    description,
+    false
+  );
+
+  return {
+    success: true,
+    response: result.narrative + '\n\n' + formattedDescription,
+    roomChanged: true,
+    newRoomId: destRoom.id,
+  };
+}
+
+/**
+ * Handle LAUNCH command - travel to a destination in a vehicle
+ */
+async function handleLaunch(
+  storyId: string,
+  currentRoom: roomService.RoomWithDetails,
+  command: ParsedCommand
+): Promise<CommandResult> {
+  // Check if we're in a vehicle
+  const { inVehicle, vehicle } = await vehicleService.isPlayerInVehicle(storyId);
+
+  if (!inVehicle || !vehicle) {
+    return {
+      success: false,
+      response: "You need to be in a vehicle to travel. Try BOARD [vehicle] first.",
+    };
+  }
+
+  // Special case: "go back"
+  if (command.rawInput.toLowerCase() === 'go back') {
+    const result = await vehicleService.goBack(storyId);
+
+    if (!result.success) {
+      return {
+        success: false,
+        response: result.narrative,
+      };
+    }
+
+    const destRoom = result.destinationRoom!;
+    return {
+      success: true,
+      response: result.narrative + `\n\n[The ${vehicle.name} is now docked at ${destRoom.name}.]`,
+    };
+  }
+
+  // Launch to destination
+  const destination = command.target || '';
+  const result = await vehicleService.launchVehicle(storyId, destination);
+
+  // If we have menu options, return them for selection
+  if (result.menuOptions && result.menuOptions.length > 0) {
+    const optionsList = result.menuOptions
+      .map((opt, i) => `  ${i + 1}. ${opt.name}`)
+      .join('\n');
+
+    return {
+      success: false,
+      response: `${result.narrative}\n\n${optionsList}\n\n[Type LAUNCH TO [destination name] to travel]`,
+      menuOptions: result.menuOptions,
+      menuType: 'destination',
+    };
+  }
+
+  if (!result.success) {
+    return {
+      success: false,
+      response: result.narrative,
+    };
+  }
+
+  // Successfully traveled
+  const destRoom = result.destinationRoom!;
+  return {
+    success: true,
+    response: result.narrative + `\n\n[The ${vehicle.name} is now docked at ${destRoom.name}. Type DISEMBARK to leave the vehicle.]`,
   };
 }
 
@@ -799,12 +1138,32 @@ async function handleUnknown(
     existingNames
   );
 
+  // Update character presence based on AI response
+  // If AI mentions a character as being present, move them to this room
+  await updateCharacterPresence(storyId, currentRoom.id, aiResult.response);
+
   // Check if a timed event was triggered (e.g., alarm, countdown)
   const newTimedEvent = await extractAndCreateTimedEvents(
     storyId,
     currentRoom.id,
     aiResult.response,
     command.rawInput
+  );
+
+  // Check if this action triggers puzzle discovery
+  const actionDiscovery = await puzzleService.discoverPuzzlesFromAction(storyId, command.rawInput);
+
+  // Check if this action reveals any hidden exits
+  const exitDiscovery = await puzzleService.discoverHiddenExits(storyId, currentRoom.id, command.rawInput);
+
+  // Check if this action completes any puzzle steps
+  const inventory = await objectService.getInventory(storyId);
+  const inventoryNames = inventory.map(obj => obj.name);
+  const puzzleCompletion = await puzzleService.checkPuzzleStepCompletion(
+    storyId,
+    command.rawInput,
+    currentRoom.id,
+    inventoryNames
   );
 
   // Build final response
@@ -815,6 +1174,15 @@ async function handleUnknown(
   }
   if (newTimedEvent) {
     response += `\n\n[Event started: ${newTimedEvent.eventName} - ${newTimedEvent.turnsRemaining} turns remaining]`;
+  }
+  if (exitDiscovery.narratives.length > 0) {
+    response += '\n\n' + exitDiscovery.narratives.join('\n');
+  }
+  if (actionDiscovery.narratives.length > 0) {
+    response += '\n\n' + actionDiscovery.narratives.join('\n');
+  }
+  if (puzzleCompletion.narratives.length > 0) {
+    response += '\n\n' + puzzleCompletion.narratives.join('\n');
   }
 
   // Cache the response with semantic topics

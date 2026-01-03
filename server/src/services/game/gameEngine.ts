@@ -400,12 +400,14 @@ export async function handleDilemmaResponse(
   dilemmaId: string,
   chosenOption: string, // 'A', 'B', 'C', or 'OTHER'
   playerResponse: string
-): Promise<void> {
+): Promise<{ outcomeNarrative: string }> {
   const dilemma = await prisma.dilemmaPoint.findUnique({
     where: { id: dilemmaId },
   });
 
-  if (!dilemma) return;
+  if (!dilemma) {
+    return { outcomeNarrative: 'The moment passes.' };
+  }
 
   // Log the player's dilemma choice to transcript
   await addToTranscript(
@@ -427,34 +429,49 @@ export async function handleDilemmaResponse(
   });
 
   // Calculate personality signal based on choice
-  const optionA = dilemma.optionA as { description: string; personalityImplication: string };
-  const optionB = dilemma.optionB as { description: string; personalityImplication: string };
-  const optionC = dilemma.optionC as { description: string; personalityImplication: string } | null;
+  const optionA = dilemma.optionA as { description: string; personalityImplication: string; outcomeNarrative?: string };
+  const optionB = dilemma.optionB as { description: string; personalityImplication: string; outcomeNarrative?: string };
+  const optionC = dilemma.optionC as { description: string; personalityImplication: string; outcomeNarrative?: string } | null;
 
   let delta = 0;
   let reasoning = '';
+  let outcomeNarrative = '';
 
   switch (chosenOption) {
     case 'A':
       delta = 5; // Positive direction for dimension
       reasoning = optionA.personalityImplication;
+      outcomeNarrative = optionA.outcomeNarrative || 'You follow through on your decision.';
       break;
     case 'B':
       delta = -5; // Negative direction for dimension
       reasoning = optionB.personalityImplication;
+      outcomeNarrative = optionB.outcomeNarrative || 'You follow through on your decision.';
       break;
     case 'C':
       if (optionC) {
         delta = 0; // Neutral/middle ground
         reasoning = optionC.personalityImplication;
+        outcomeNarrative = optionC.outcomeNarrative || 'You follow through on your decision.';
       }
       break;
     case 'OTHER':
-      // Player found a creative solution - analyze with AI later
+      // Player found a creative solution - generate outcome with AI
       delta = 0;
       reasoning = 'Player chose a creative alternative solution.';
+      outcomeNarrative = `You choose a different path: ${playerResponse}. The consequences of your unique approach will unfold.`;
       break;
   }
+
+  // Log the outcome narrative to transcript
+  await addToTranscript(
+    storyId,
+    'narrator',
+    outcomeNarrative,
+    'narrative',
+    dilemma.roomId || undefined,
+    { dilemmaId, chosenOption, outcome: true }
+  );
 
   // Record the personality event
   await recordPersonalityEvent(storyId, playerResponse, {
@@ -475,6 +492,8 @@ export async function handleDilemmaResponse(
       reasoning: `Secondary signal from: ${reasoning}`,
     });
   }
+
+  return { outcomeNarrative };
 }
 
 /**

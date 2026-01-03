@@ -10,21 +10,21 @@
 }
 
 .generating-content {
-  max-width: 600px;
+  max-width: 700px;
   width: 100%;
 }
 
 .generating-title {
   font-size: 1.8rem;
   letter-spacing: 0.15em;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   color: var(--color-primary);
   text-transform: uppercase;
 }
 
-/* Progress Bar */
+/* Main Progress Bar */
 .progress-container {
-  margin: 2rem 0;
+  margin: 1.5rem 0;
 }
 
 .progress-bar {
@@ -51,8 +51,8 @@
 
 /* Step Info */
 .step-info {
-  margin: 2rem 0;
-  padding: 1.5rem;
+  margin: 1.5rem 0;
+  padding: 1rem;
   border: 1px solid var(--color-border, rgba(0, 255, 0, 0.3));
   border-radius: 4px;
   background: var(--color-background-secondary, rgba(0, 0, 0, 0.3));
@@ -60,16 +60,141 @@
 
 .step-title {
   font-size: 1.2rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
   color: var(--color-primary, #0f0);
   letter-spacing: 0.1em;
 }
 
 .step-description {
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: 0.95rem;
+  line-height: 1.5;
   opacity: 0.8;
   font-style: italic;
+}
+
+/* Activity Indicator Bar */
+.activity-container {
+  margin: 1rem 0;
+}
+
+.activity-bar {
+  height: 4px;
+  background: var(--color-background-secondary, rgba(0, 255, 0, 0.1));
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.activity-pulse {
+  position: absolute;
+  height: 100%;
+  width: 30%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-primary, #0f0),
+    transparent
+  );
+  animation: activity-sweep 1.5s ease-in-out infinite;
+}
+
+@keyframes activity-sweep {
+  0% {
+    left: -30%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* Boot-up Log Messages */
+.log-container {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--color-border, rgba(0, 255, 0, 0.2));
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  text-align: left;
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary, #0f0) transparent;
+}
+
+.log-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.log-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-container::-webkit-scrollbar-thumb {
+  background: var(--color-primary, #0f0);
+  border-radius: 3px;
+}
+
+.log-entry {
+  padding: 0.15rem 0;
+  color: var(--color-text-dim, rgba(0, 255, 0, 0.7));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: log-appear 0.3s ease-out;
+}
+
+.log-entry:last-child {
+  color: var(--color-primary, #0f0);
+}
+
+.log-entry.log-done {
+  color: var(--color-success, #0f0);
+  font-weight: bold;
+}
+
+.log-entry.log-boot {
+  color: var(--color-highlight, #0ff);
+  font-weight: bold;
+}
+
+@keyframes log-appear {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Sub-progress Bar */
+.sub-progress-container {
+  margin: 1rem 0;
+}
+
+.sub-progress-bar {
+  height: 6px;
+  background: var(--color-background-secondary, rgba(0, 255, 0, 0.1));
+  border: 1px solid var(--color-border, rgba(0, 255, 0, 0.3));
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.25rem;
+}
+
+.sub-progress-fill {
+  height: 100%;
+  background: var(--color-secondary, #0ff);
+  transition: width 0.3s ease-out;
+  box-shadow: 0 0 8px var(--color-secondary, #0ff);
+}
+
+.sub-progress-text {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  font-family: monospace;
 }
 
 /* Completion */

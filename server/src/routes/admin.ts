@@ -174,12 +174,13 @@ router.get('/sessions/:id/transcript', async (req: Request, res: Response) => {
       }
     });
 
-    // Also get story info
+    // Also get story info including interview data
     const story = await prisma.story.findUnique({
       where: { id },
       select: {
         title: true,
         status: true,
+        initialInterview: true,
         playerState: {
           select: {
             turnCount: true,
@@ -197,6 +198,7 @@ router.get('/sessions/:id/transcript', async (req: Request, res: Response) => {
         turnCount: story?.playerState?.turnCount,
         score: story?.playerState?.score,
         currentRoomId: story?.playerState?.currentRoomId,
+        initialInterview: story?.initialInterview,
       },
       transcript,
       lastUpdate: transcript.length > 0

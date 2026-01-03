@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { apiClient, AdminSession, AdminStats, TranscriptEntry } from '../../services/api';
+import { apiClient, AdminSession, AdminStats, TranscriptEntry, InterviewExchange } from '../../services/api';
 import './AdminPanel.css';
 
 interface AdminPanelProps {
@@ -16,6 +16,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [selectedSession, setSelectedSession] = useState<AdminSession | null>(null);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [interviewData, setInterviewData] = useState<InterviewExchange[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -54,6 +55,8 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       } else if (!since) {
         // Full load
         setTranscript(data.transcript);
+        // Store interview data on initial load
+        setInterviewData(data.story.initialInterview || null);
       }
       lastUpdateRef.current = data.lastUpdate;
     } catch (err) {
@@ -99,6 +102,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     stopPolling();
     setSelectedSession(null);
     setTranscript([]);
+    setInterviewData(null);
     lastUpdateRef.current = null;
   }, [stopPolling]);
 
@@ -263,7 +267,28 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                 </div>
 
                 <div className="transcript-view">
-                  {transcript.length === 0 ? (
+                  {/* Interview Section */}
+                  {interviewData && interviewData.length > 0 && (
+                    <div className="interview-section">
+                      <div className="interview-header">─── INTERVIEW ───</div>
+                      {interviewData.map((exchange, index) => (
+                        <div key={index} className="interview-exchange">
+                          <div className="transcript-entry narrator">
+                            <span className="entry-speaker">[NARRATOR]</span>
+                            <span className="entry-content">{exchange.question}</span>
+                          </div>
+                          <div className="transcript-entry player">
+                            <span className="entry-speaker">[PLAYER]</span>
+                            <span className="entry-content">{exchange.answer}</span>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="interview-header">─── GAME START ───</div>
+                    </div>
+                  )}
+
+                  {/* Game Transcript */}
+                  {transcript.length === 0 && !interviewData ? (
                     <div className="no-transcript">No transcript entries</div>
                   ) : (
                     transcript.map((entry) => (

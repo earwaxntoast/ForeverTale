@@ -49,8 +49,15 @@ export default function InterviewScreen() {
         setScreen('generating_story');
         awaitingStoryPreferenceRef.current = false;
 
+        // Add the story preference Q&A to the exchanges for logging
+        const storyPreferenceQuestion = `I have seen enough of your soul, ${playerName}. Now tell me... what kind of tale calls to you?`;
+        const exchangesWithPreference = [
+          ...completedExchangesRef.current,
+          { question: storyPreferenceQuestion, answer: input }
+        ];
+
         // Generate story with the player's preference
-        generateStory(playerName, completedExchangesRef.current, input);
+        generateStory(playerName, exchangesWithPreference, input);
         return;
       }
 
@@ -189,7 +196,7 @@ export default function InterviewScreen() {
         // Ask the player what type of story they'd like
         addMessage({
           type: 'narrator',
-          content: `I have seen enough of your soul, ${playerName}. Now tell me... what kind of tale calls to you? Do you yearn for high fantasy with magic and mythical creatures? Perhaps the cold logic of science fiction? The shadows of horror? The intrigue of mystery? A romantic journey? Or something else entirely? Speak freely—your preference will shape the world that awaits you.`,
+          content: `I have seen enough of your soul, ${playerName}. Now tell me... what kind of tale calls to you? Do you yearn for high fantasy with magic and mythical creatures? Perhaps the cold logic of science fiction? The shadows of horror? The intrigue of mystery? A romantic journey? Or something else entirely? Maybe you defer to my whim? Speak freely—your preference will shape the world that awaits you.`,
           isTyping: true,
         });
 

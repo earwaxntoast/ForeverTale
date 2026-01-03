@@ -476,3 +476,32 @@
 .transcript-view::-webkit-scrollbar-thumb:hover {
   background: #660000;
 }
+
+/* Interview Section */
+.interview-section {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.interview-header {
+  text-align: center;
+  color: #666;
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  margin: 0.75rem 0;
+}
+
+.interview-exchange {
+  margin-bottom: 0.5rem;
+}
+
+.interview-section .transcript-entry {
+  border-bottom: none;
+  margin-bottom: 0.25rem;
+  padding: 0.15rem 0;
+}
+
+.interview-section .entry-content {
+  color: #aaa;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { apiClient, SidebarResponse } from '../../services/api';
 import { renderAsciiMap, MapRoom } from '../../utils/asciiMap';
 import './GameSidebar.css';
@@ -12,6 +12,17 @@ export function GameSidebar({ storyId, refreshTrigger }: GameSidebarProps) {
   const [data, setData] = useState<SidebarResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mapLines, setMapLines] = useState<string[]>([]);
+  const [zoom, setZoom] = useState(1);
+
+  // Re-render map when zoom changes
+  const renderMap = useCallback((mapData: MapRoom[], zoomLevel: number) => {
+    const map = renderAsciiMap(mapData, {
+      width: 28,
+      height: 14,
+      zoom: zoomLevel,
+    });
+    setMapLines(map);
+  }, []);
 
   // Fetch sidebar data
   useEffect(() => {
@@ -24,11 +35,7 @@ export function GameSidebar({ storyId, refreshTrigger }: GameSidebarProps) {
         setError(null);
 
         // Render ASCII map
-        const map = renderAsciiMap(response.map as MapRoom[], {
-          width: 28,
-          height: 14,
-        });
-        setMapLines(map);
+        renderMap(response.map as MapRoom[], zoom);
       } catch (err) {
         console.error('Failed to fetch sidebar:', err);
         setError('Failed to load');
@@ -36,7 +43,24 @@ export function GameSidebar({ storyId, refreshTrigger }: GameSidebarProps) {
     };
 
     fetchSidebar();
-  }, [storyId, refreshTrigger]);
+  }, [storyId, refreshTrigger, renderMap, zoom]);
+
+  // Handle zoom changes
+  const handleZoomIn = () => {
+    const newZoom = Math.min(zoom + 0.25, 2);
+    setZoom(newZoom);
+    if (data) {
+      renderMap(data.map as MapRoom[], newZoom);
+    }
+  };
+
+  const handleZoomOut = () => {
+    const newZoom = Math.max(zoom - 0.25, 0.5);
+    setZoom(newZoom);
+    if (data) {
+      renderMap(data.map as MapRoom[], newZoom);
+    }
+  };
 
   if (error) {
     return (
@@ -147,7 +171,27 @@ export function GameSidebar({ storyId, refreshTrigger }: GameSidebarProps) {
       {/* Right Column: Map */}
       <div className="sidebar-column sidebar-right">
         <section className="sidebar-section map-section">
-          <h3 className="section-header">MAP</h3>
+          <div className="map-header">
+            <h3 className="section-header">MAP</h3>
+            <div className="map-zoom-controls">
+              <button
+                className="zoom-button"
+                onClick={handleZoomOut}
+                disabled={zoom <= 0.5}
+                title="Zoom out"
+              >
+                -
+              </button>
+              <button
+                className="zoom-button"
+                onClick={handleZoomIn}
+                disabled={zoom >= 2}
+                title="Zoom in"
+              >
+                +
+              </button>
+            </div>
+          </div>
           <pre className="ascii-map">
             {mapLines.map((line, i) => (
               <div key={i}>{line || ' '}</div>
@@ -156,7 +200,6 @@ export function GameSidebar({ storyId, refreshTrigger }: GameSidebarProps) {
           <div className="map-legend">
             <span>@ You</span>
             <span>. Visited</span>
-            <span>? Unknown</span>
           </div>
         </section>
       </div>

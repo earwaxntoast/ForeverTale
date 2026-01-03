@@ -63,6 +63,15 @@ interface GameStateResponse {
   characters: Array<{ id: string; name: string; description: string }>;
 }
 
+interface OpeningResponse {
+  storyTitle: string;
+  chapterTitle: string;
+  chapterNumber: number;
+  openingNarrative: string;
+  initialObjective: string;
+  immediateChoices: string[];
+}
+
 interface DilemmaRequest {
   storyId: string;
   dilemmaId: string;
@@ -158,6 +167,11 @@ export interface TranscriptEntry {
   createdAt: string;
 }
 
+export interface InterviewExchange {
+  question: string;
+  answer: string;
+}
+
 export interface SessionTranscript {
   story: {
     title: string;
@@ -165,6 +179,7 @@ export interface SessionTranscript {
     turnCount: number;
     score: number;
     currentRoomId: string | null;
+    initialInterview?: InterviewExchange[];
   };
   transcript: TranscriptEntry[];
   lastUpdate: string | null;
@@ -186,8 +201,9 @@ interface ApiClient {
   getStory: (storyId: string) => Promise<object>;
   getAnalysis: (storyId: string) => Promise<object>;
   getGameState: (storyId: string) => Promise<GameStateResponse>;
+  getOpening: (storyId: string) => Promise<OpeningResponse>;
   getSidebar: (storyId: string) => Promise<SidebarResponse>;
-  submitDilemmaResponse: (data: DilemmaRequest) => Promise<{ success: boolean }>;
+  submitDilemmaResponse: (data: DilemmaRequest) => Promise<{ success: boolean; outcomeNarrative?: string }>;
   // Admin endpoints
   admin: {
     clearDatabase: () => Promise<{ success: boolean; message: string }>;
@@ -251,11 +267,14 @@ export const apiClient: ApiClient = {
   getGameState: (storyId) =>
     request<GameStateResponse>(`/stories/${storyId}/state`),
 
+  getOpening: (storyId) =>
+    request<OpeningResponse>(`/stories/${storyId}/opening`),
+
   getSidebar: (storyId) =>
     request<SidebarResponse>(`/stories/${storyId}/sidebar`),
 
   submitDilemmaResponse: (data) =>
-    request<{ success: boolean }>(`/stories/${data.storyId}/dilemma/${data.dilemmaId}`, {
+    request<{ success: boolean; outcomeNarrative?: string }>(`/stories/${data.storyId}/dilemma/${data.dilemmaId}`, {
       method: 'POST',
       body: JSON.stringify({
         chosenOption: data.chosenOption,
