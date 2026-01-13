@@ -256,14 +256,6 @@
   opacity: 0.5;
 }
 
-/* Reduce CRT blur on objective text for readability */
-  .objective-name,
-  .objective-step,
-  .step-checkbox {
-    text-shadow: 0 0 1px var(--color-primary-dim) !important;
-    animation: none !important;
-  }
-
 .step-checkbox {
   flex-shrink: 0;
   font-family: 'IBM Plex Mono', 'Courier New', monospace;

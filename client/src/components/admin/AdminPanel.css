@@ -266,6 +266,7 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.25rem;
+  gap: 0.5rem;
 }
 
 .session-title {
@@ -274,6 +275,36 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.use-interview-btn {
+  background: rgba(51, 153, 255, 0.2);
+  border: 1px solid #3399ff;
+  color: #3399ff;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.6rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.use-interview-btn:hover:not(:disabled) {
+  background: rgba(51, 153, 255, 0.4);
+  border-color: #66b3ff;
+  color: #66b3ff;
+}
+
+.use-interview-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .status-badge {

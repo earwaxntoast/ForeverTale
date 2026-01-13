@@ -19,10 +19,11 @@ export type GenerationStepName =
   | 'connectingAreas'
   | 'characters'
   | 'backstory'
-  | 'dilemmas'
+  | 'storyBeats'
   | 'puzzles'
   | 'startingSkills'
   | 'secretFacts'
+  | 'coherencePass'
   | 'opening';
 
 // Progress event for client feedback (themed narratives)
@@ -51,10 +52,11 @@ export interface AllStepData {
   connectingAreas: ConnectingAreasData;
   characters: CharactersData;
   backstory: BackstoryData;
-  dilemmas: DilemmasData;
+  storyBeats: StoryBeatsData;
   puzzles: PuzzlesData;
   startingSkills: StartingSkillsData;
   secretFacts: SecretFactsData;
+  coherencePass: CoherencePassData;
   opening: OpeningData;
 }
 
@@ -182,53 +184,62 @@ export interface BackstoryData {
 }
 
 // ============================================
-// Step 6: Dilemmas
+// OCEAN Personality Dimensions (used for story beat resolution choices)
 // ============================================
 export type OCEANDimension = 'O' | 'C' | 'E' | 'A' | 'N';
 
-export interface DilemmaOption {
-  description: string;
-  personalityImplication: string;
-  outcomeNarrative?: string;  // What happens when this choice is made
-}
-
-export interface DilemmaData {
-  name: string;
-  description: string;
+// ============================================
+// Step 6: Story Beats (major narrative convergence points with OCEAN choices)
+// ============================================
+export interface ResolutionOption {
+  id: string;                       // "option_a", "option_b", "option_c"
+  description: string;              // How this option resolves the beat
+  approachStyle: string;            // "Creative", "Methodical", "Diplomatic", etc.
   primaryDimension: OCEANDimension;
   secondaryDimension?: OCEANDimension;
-  triggerRoomName?: string;        // Room name where this can trigger
-  triggerCondition?: string;       // Optional condition
-  optionA: DilemmaOption;
-  optionB: DilemmaOption;
-  optionC?: DilemmaOption;
+  personalityImplication: string;   // What choosing this reveals about the player
+  outcomeNarrative: string;         // What happens when this choice is made
 }
 
-export interface DilemmasData {
-  dilemmas: DilemmaData[];         // ceil(roomCount / 5)
+export interface StoryBeatData {
+  name: string;                     // "Access the Lighthouse Beacon"
+  description: string;              // What achieving this beat means for the story
+  beatOrder: number;                // Sequence in story arc (1, 2, 3...)
+  resolutionOptions: ResolutionOption[];  // 2-3 ways to resolve this beat, each tied to OCEAN
+}
+
+export interface StoryBeatsData {
+  beats: StoryBeatData[];           // 3-5 major story beats
 }
 
 // ============================================
-// Step 7: Puzzles
+// Step 7: Puzzle Dependency Chart
 // ============================================
-export interface PuzzleStepRequirements {
-  requiredItems?: string[];
-  requiredActions?: string[];      // Verb patterns like "examine", "use X on Y"
-  requiredRoom?: string;
-}
+export type PuzzleNodeType = 'character' | 'object' | 'location' | 'action';
+export type PuzzleRewardType = 'item' | 'skill_boost' | 'dilemma' | 'secret_reveal' | 'room_unlock' | 'character_info';
 
 export interface PuzzleStepData {
   stepNumber: number;
-  description: string;
-  hint?: string;
-  requirements: PuzzleStepRequirements;
-  timedUrgency?: {
-    turnsAllowed: number;
-    failureConsequence: string;
-  };
-}
+  description: string;              // Cryptic objective shown in sidebar
+  hint?: string;                    // Optional hint if stuck
 
-export type PuzzleRewardType = 'item' | 'skill_boost' | 'dilemma' | 'secret_reveal' | 'room_unlock' | 'character_info';
+  // What this step involves
+  nodeType: PuzzleNodeType;         // character, object, location, action
+  targetName?: string;              // Name of character/object/room (e.g., "Old Keeper", "Oil Can")
+
+  // Completion requirements
+  completionAction: string;         // Action pattern: "talk to keeper", "use oil can on hinges"
+  requiredItems?: string[];         // Items needed to complete
+  requiredRoom?: string;            // Room name where step must happen
+
+  // What completing this step provides
+  givesItem?: string;               // Item name received on completion
+  givesClue?: string;               // Narrative hint revealed (not shown in sidebar)
+
+  // Visibility (for progressive reveal)
+  isInitiallyRevealed: boolean;     // True for first step, false for others
+  revealTriggers?: string[];        // Actions that reveal this step early (e.g., "use radio", "examine radio")
+}
 
 export interface PuzzleReward {
   type: PuzzleRewardType;
@@ -238,13 +249,13 @@ export interface PuzzleReward {
 export interface PuzzleData {
   name: string;
   description: string;
-  roomName: string;                 // Primary room
+  storyBeatName: string;            // Which beat this puzzle leads to
+  branchPath: string;               // e.g., "beat1.left", "beat1.right" for parallel paths
+  roomName: string;                 // Primary room where puzzle begins
   steps: PuzzleStepData[];          // 2-5 steps per puzzle
-  reward: PuzzleReward;
-  leadsToDilemma?: string;          // Name of dilemma this leads to
-  prerequisites?: string[];          // Puzzle names that must be complete first
-  isInitialObjective?: boolean;      // True if this is the starting objective
-  discoversOnRoomEntry?: boolean;    // True if puzzle is immediately apparent when entering room
+  reward?: PuzzleReward;
+  isBottleneck?: boolean;           // True if this is a convergence point
+  isInitialObjective?: boolean;     // True if this is the starting objective
 }
 
 export interface PuzzleChainLink {
@@ -255,7 +266,7 @@ export interface PuzzleChainLink {
 }
 
 export interface PuzzlesData {
-  puzzles: PuzzleData[];            // 3 puzzles per room
+  puzzles: PuzzleData[];            // 5-10 puzzles per game with diamond structure
   puzzleChains: PuzzleChainLink[];
 }
 
@@ -294,7 +305,40 @@ export interface SecretFactsData {
 }
 
 // ============================================
-// Step 10: Opening
+// Step 10: Coherence Pass
+// Updates earlier-generated content with foreshadowing and narrative coherence
+// ============================================
+export interface RoomUpdate {
+  roomName: string;
+  updatedFullDescription?: string;
+  updatedAtmosphere?: {
+    lighting?: string;
+    mood?: string;
+    sounds?: string;
+    smells?: string;
+  };
+}
+
+export interface ObjectUpdate {
+  roomName: string;
+  objectName: string;
+  updatedDescription: string;
+}
+
+export interface CharacterUpdate {
+  characterName: string;
+  updatedBriefDescription?: string;
+  updatedVoiceDescription?: string;
+}
+
+export interface CoherencePassData {
+  roomUpdates: RoomUpdate[];
+  objectUpdates: ObjectUpdate[];
+  characterUpdates: CharacterUpdate[];
+}
+
+// ============================================
+// Step 11: Opening
 // ============================================
 export interface StartingItem {
   name: string;
@@ -325,9 +369,10 @@ export const GENERATION_STEPS: StepConfig[] = [
   { name: 'connectingAreas', description: 'Connecting areas...', themedNarrative: 'Paths weave between shadows...', maxRetries: 3 },
   { name: 'characters', description: 'Generating characters...', themedNarrative: 'Figures emerge from the gloom...', maxRetries: 3 },
   { name: 'backstory', description: 'Writing backstory...', themedNarrative: 'Memories surface, half-forgotten...', maxRetries: 3 },
-  { name: 'dilemmas', description: 'Creating dilemmas...', themedNarrative: 'Choices crystallize before you...', maxRetries: 3 },
+  { name: 'storyBeats', description: 'Mapping story arc...', themedNarrative: 'Choices crystallize before you...', maxRetries: 3 },
   { name: 'puzzles', description: 'Designing puzzles...', themedNarrative: 'Secrets hide in plain sight...', maxRetries: 3 },
   { name: 'startingSkills', description: 'Assigning skills...', themedNarrative: 'Your abilities awaken...', maxRetries: 3 },
   { name: 'secretFacts', description: 'Hiding secrets...', themedNarrative: 'Truths lie buried, waiting...', maxRetries: 3 },
+  { name: 'coherencePass', description: 'Weaving narrative threads...', themedNarrative: 'Connections shimmer into focus...', maxRetries: 3 },
   { name: 'opening', description: 'Writing opening...', themedNarrative: 'Your story begins...', maxRetries: 3 },
 ];

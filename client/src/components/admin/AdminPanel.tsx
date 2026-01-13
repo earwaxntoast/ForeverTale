@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient, AdminSession, AdminStats, TranscriptEntry, InterviewExchange } from '../../services/api';
+import { useGameStore } from '../../store/gameStore';
 import './AdminPanel.css';
 
 interface AdminPanelProps {
@@ -175,6 +176,55 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     }
   };
 
+  // Get game store actions for bypassing interview
+  const { setScreen, setCurrentStoryId, setPlayerName } = useGameStore();
+
+  // Use interview from existing session to bypass interview and start generation
+  const handleUseInterview = async (session: AdminSession, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent double-click handler
+
+    if (!confirm(`Use interview from "${session.title}" to generate a new story?`)) return;
+
+    setIsLoading(true);
+    setMessage(null);
+
+    try {
+      // Fetch the interview data from this session
+      const data = await apiClient.admin.getSessionTranscript(session.id);
+      const interviewExchanges = data.story.initialInterview;
+
+      if (!interviewExchanges || interviewExchanges.length === 0) {
+        setMessage({ type: 'error', text: 'No interview data found in this session' });
+        setIsLoading(false);
+        return;
+      }
+
+      // Close admin panel
+      onClose();
+
+      // Set player name from the session
+      setPlayerName(session.playerName);
+
+      // Switch to generating screen
+      setScreen('generating_story');
+
+      // Start story generation with the interview data
+      const result = await apiClient.generateStory({
+        playerName: session.playerName,
+        interviewExchanges: interviewExchanges,
+        storyPreference: undefined, // Could extract from last exchange if needed
+      });
+
+      // Store the new story ID
+      setCurrentStoryId(result.storyId);
+
+    } catch (err) {
+      console.error('Failed to use interview:', err);
+      setMessage({ type: 'error', text: `Failed to use interview: ${String(err)}` });
+      setIsLoading(false);
+    }
+  };
+
   // Format timestamp
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -334,9 +384,19 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                     >
                       <div className="session-header">
                         <span className="session-title">{session.title}</span>
-                        <span className={`status-badge ${session.status}`}>
-                          {session.status === 'in_progress' ? 'LIVE' : session.status.toUpperCase()}
-                        </span>
+                        <div className="session-actions">
+                          <button
+                            className="use-interview-btn"
+                            onClick={(e) => handleUseInterview(session, e)}
+                            disabled={isLoading}
+                            title="Use this interview to generate a new story"
+                          >
+                            Use Interview
+                          </button>
+                          <span className={`status-badge ${session.status}`}>
+                            {session.status === 'in_progress' ? 'LIVE' : session.status.toUpperCase()}
+                          </span>
+                        </div>
                       </div>
                       <div className="session-meta">
                         <span>{session.playerName}</span>

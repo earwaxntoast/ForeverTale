@@ -359,6 +359,16 @@ async function handleGo(
   // Check for puzzles that auto-discover on room entry
   const roomDiscovery = await puzzleService.discoverPuzzlesOnRoomEntry(storyId, newRoom.id);
 
+  // Check if entering this room completes any puzzle steps (steps with requiredRoom)
+  const inventory = await objectService.getInventory(storyId);
+  const inventoryNames = inventory.map(obj => obj.name);
+  const puzzleCompletion = await puzzleService.checkPuzzleStepCompletion(
+    storyId,
+    command.rawInput, // e.g., "go north"
+    newRoom.id,
+    inventoryNames
+  );
+
   // If new items were discovered from the description, append a notice
   let response = formattedDescription;
   if (newItems.length > 0) {
@@ -369,6 +379,11 @@ async function handleGo(
   // Append any puzzle discovery narratives
   if (roomDiscovery.narratives.length > 0) {
     response += '\n\n' + roomDiscovery.narratives.join('\n');
+  }
+
+  // Append puzzle completion narratives
+  if (puzzleCompletion.narratives.length > 0) {
+    response += '\n\n' + puzzleCompletion.narratives.join('\n');
   }
 
   return {
@@ -519,6 +534,21 @@ async function handleTake(
     result.response += '\n\n' + result.discoveryNarratives.join('\n');
   }
 
+  // Check if this action completes any puzzle steps
+  const inventory = await objectService.getInventory(storyId);
+  const inventoryNames = inventory.map(obj => obj.name);
+  const puzzleCompletion = await puzzleService.checkPuzzleStepCompletion(
+    storyId,
+    command.rawInput,
+    currentRoom.id,
+    inventoryNames
+  );
+
+  // Append puzzle completion narratives
+  if (puzzleCompletion.narratives.length > 0) {
+    result.response += '\n\n' + puzzleCompletion.narratives.join('\n');
+  }
+
   return result;
 }
 
@@ -538,6 +568,22 @@ async function handleDrop(
   }
 
   const result = await objectService.dropObject(storyId, currentRoom.id, command.target);
+
+  // Check if this action completes any puzzle steps
+  const inventory = await objectService.getInventory(storyId);
+  const inventoryNames = inventory.map(obj => obj.name);
+  const puzzleCompletion = await puzzleService.checkPuzzleStepCompletion(
+    storyId,
+    command.rawInput,
+    currentRoom.id,
+    inventoryNames
+  );
+
+  // Append puzzle completion narratives
+  if (puzzleCompletion.narratives.length > 0) {
+    result.response += '\n\n' + puzzleCompletion.narratives.join('\n');
+  }
+
   return result;
 }
 
@@ -763,9 +809,25 @@ async function handleTalk(
   // Update character presence based on AI response (in case other characters are mentioned)
   await updateCharacterPresence(storyId, currentRoom.id, aiResult.response);
 
+  // Check if this conversation completes any puzzle steps
+  const inventory = await objectService.getInventory(storyId);
+  const inventoryNames = inventory.map(obj => obj.name);
+  const puzzleCompletion = await puzzleService.checkPuzzleStepCompletion(
+    storyId,
+    command.rawInput,
+    currentRoom.id,
+    inventoryNames
+  );
+
+  // Build response with puzzle progress
+  let response = aiResult.response;
+  if (puzzleCompletion.narratives.length > 0) {
+    response += '\n\n' + puzzleCompletion.narratives.join('\n');
+  }
+
   return {
     success: true,
-    response: aiResult.response,
+    response,
     personalitySignal: aiResult.personalitySignal,
   };
 }

@@ -137,6 +137,7 @@ model Story {
   timedEvents        TimedEvent[]
 
   // Puzzle system
+  storyBeats         StoryBeat[]
   puzzles            Puzzle[]
 
   // Object systems
@@ -783,11 +784,12 @@ model StoryFact {
   @@map("story_facts")
 }
 
-// Dilemma Points - Personality-revealing choice moments
+// Dilemma Points - Personality-revealing choice moments (resolution options for story beats)
 model DilemmaPoint {
   id              String   @id @default(uuid())
   storyId         String   @map("story_id")
   roomId          String?  @map("room_id") // Where this dilemma occurs (if location-based)
+  storyBeatId     String?  @unique @map("story_beat_id") // Story beat this dilemma resolves
 
   // Dilemma design
   name            String   // Internal name for reference
@@ -795,8 +797,8 @@ model DilemmaPoint {
   primaryDimension String  @map("primary_dimension") // O, C, E, A, or N
   secondaryDimension String? @map("secondary_dimension") // Optional second dimension tested
 
-  // The choices
-  optionA         Json     @map("option_a") // { description, personalityImplication, outcomeHint }
+  // The choices (now represent different approaches to resolve the story beat)
+  optionA         Json     @map("option_a") // { description, approachStyle, personalityImplication, outcomeNarrative }
   optionB         Json     @map("option_b")
   optionC         Json?    @map("option_c") // Optional third choice
 
@@ -813,6 +815,7 @@ model DilemmaPoint {
 
   story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
   room            Room?    @relation(fields: [roomId], references: [id])
+  storyBeat       StoryBeat? @relation(fields: [storyBeatId], references: [id])
 
   // Puzzles that lead to this dilemma
   leadingPuzzles Puzzle[]
@@ -824,14 +827,44 @@ model DilemmaPoint {
 // PUZZLE SYSTEM - Multi-step objectives with flowchart chains
 // ============================================
 
+// Story Beats - Major narrative convergence points with OCEAN resolution choices
+model StoryBeat {
+  id              String    @id @default(uuid())
+  storyId         String    @map("story_id")
+
+  // Beat details
+  name            String    // "Access the Lighthouse Beacon"
+  description     String    // What achieving this beat means for the story
+  beatOrder       Int       @map("beat_order") // Sequence in story arc (1, 2, 3...)
+
+  // State
+  isCompleted     Boolean   @default(false) @map("is_completed")
+  completedAt     DateTime? @map("completed_at")
+  chosenResolution String?  @map("chosen_resolution") // Which option was chosen (option_a, option_b, option_c)
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  story           Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  puzzles         Puzzle[]  // Puzzles that converge to unlock this beat
+  dilemma         DilemmaPoint? // The resolution choice for this beat
+
+  @@unique([storyId, beatOrder])
+  @@map("story_beats")
+}
+
 model Puzzle {
   id              String       @id @default(uuid())
   storyId         String       @map("story_id")
+  storyBeatId     String?      @map("story_beat_id") // Which beat this puzzle leads to
   roomId          String?      @map("room_id") // Primary room where puzzle begins
 
   // Basic info
   name            String
   description     String       // What the puzzle is about
+
+  // Dependency chart position
+  branchPath      String?      @map("branch_path") // e.g., "beat1.left", "beat1.right" for parallel paths
+  isBottleneck    Boolean      @default(false) @map("is_bottleneck") // True if this is a convergence point
 
   // State tracking
   status          PuzzleStatus @default(pending)
@@ -857,6 +890,7 @@ model Puzzle {
   createdAt       DateTime     @default(now()) @map("created_at")
 
   story           Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  storyBeat       StoryBeat?   @relation(fields: [storyBeatId], references: [id])
   room            Room?        @relation(fields: [roomId], references: [id])
   steps           PuzzleStep[]
   targetDilemma   DilemmaPoint? @relation(fields: [targetDilemmaId], references: [id])
@@ -881,11 +915,28 @@ model PuzzleStep {
 
   // Step details
   stepNumber      Int       @map("step_number")
-  description     String    // What player needs to do
+  description     String    // What player needs to do (cryptic, shown in sidebar)
   hint            String?   // Optional hint if stuck
 
-  // Completion requirements (JSON for flexibility)
-  requirements    Json      @default("{}") // { requiredItems: [], requiredActions: [], requiredRoom: null }
+  // What this step involves (for code-driven logic)
+  nodeType        String    @default("action") @map("node_type") // character, object, location, action
+  targetId        String?   @map("target_id") // ID of character/object/room if applicable
+  targetName      String?   @map("target_name") // Name for matching (e.g., "Oil Can", "Old Keeper")
+
+  // Completion requirements
+  completionAction String?  @map("completion_action") // Action pattern: "use oil can on hinges"
+  requiredItems   Json      @default("[]") @map("required_items") // Items needed to complete
+  requiredRoom    String?   @map("required_room") // Room name where step must happen
+
+  // What completing this step provides
+  givesItem       String?   @map("gives_item") // Item name received on completion
+  givesClue       String?   @map("gives_clue") // Narrative hint revealed
+  revealsSteps    Json      @default("[]") @map("reveals_steps") // Step IDs to reveal on completion
+
+  // Visibility (progressive reveal)
+  isRevealed      Boolean   @default(false) @map("is_revealed") // Visible in objectives
+  revealedBy      String?   @map("revealed_by") // How it was revealed: "initial", step ID, or action
+  revealTriggers  Json      @default("[]") @map("reveal_triggers") // Actions that reveal this step
 
   // State
   isCompleted     Boolean   @default(false) @map("is_completed")

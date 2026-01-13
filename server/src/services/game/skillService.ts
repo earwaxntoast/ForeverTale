@@ -185,7 +185,8 @@ export async function performSkillCheck(
 ): Promise<SkillCheckResult> {
   // Get or create the ability
   const ability = await getOrCreateAbility(storyId, abilityName);
-  const abilityLevel = Number(ability.level);
+  const rawLevel = Number(ability.level);
+  const abilityLevel = Math.floor(rawLevel); // Use whole number for rolls
 
   // Roll the dice
   const roll = rollD20();
@@ -432,7 +433,7 @@ export function formatSkillCheckResult(result: SkillCheckResult): string {
   lines.push(`--- SKILL CHECK: ${result.abilityName.toUpperCase()} ---`);
   lines.push(result.diceAscii);
   lines.push('');
-  lines.push(`Roll: ${result.roll} + ${result.abilityLevel.toFixed(1)} skill = ${result.total.toFixed(1)}`);
+  lines.push(`Roll: ${result.roll} + ${result.abilityLevel} skill = ${result.total}`);
   lines.push(`Difficulty: ${result.difficulty}`);
   lines.push('');
 
@@ -441,9 +442,9 @@ export function formatSkillCheckResult(result: SkillCheckResult): string {
   } else if (result.isNat1) {
     lines.push('*** SPECTACULAR FAILURE! ***');
   } else if (result.success) {
-    lines.push(`SUCCESS! (margin: +${result.margin.toFixed(1)})`);
+    lines.push(`SUCCESS! (margin: +${result.margin})`);
   } else {
-    lines.push(`FAILED (margin: ${result.margin.toFixed(1)})`);
+    lines.push(`FAILED (margin: ${result.margin})`);
   }
 
   if (result.skillGain > 0) {

@@ -21,6 +21,7 @@ export async function persistGeneratedStory(
     // Maps to track created entity IDs
     const roomIdMap = new Map<string, string>();
     const dilemmaIdMap = new Map<string, string>();
+    const storyBeatIdMap = new Map<string, string>();
     const puzzleIdMap = new Map<string, string>();
 
     // ============================================
@@ -167,56 +168,90 @@ export async function persistGeneratedStory(
     });
 
     // ============================================
-    // 6. Create Dilemmas
+    // 6. Create Story Beats with Resolution Options (DilemmaPoints)
     // ============================================
-    for (const dilemma of data.dilemmas.dilemmas) {
-      const roomId = dilemma.triggerRoomName
-        ? roomIdMap.get(dilemma.triggerRoomName) || null
-        : null;
-
-      const created = await tx.dilemmaPoint.create({
+    for (const beat of data.storyBeats.beats) {
+      // Create the story beat first
+      const createdBeat = await tx.storyBeat.create({
         data: {
           storyId,
-          roomId,
-          name: dilemma.name,
-          description: dilemma.description,
-          primaryDimension: dilemma.primaryDimension,
-          secondaryDimension: dilemma.secondaryDimension,
-          optionA: dilemma.optionA as unknown as Prisma.InputJsonValue,
-          optionB: dilemma.optionB as unknown as Prisma.InputJsonValue,
-          optionC: dilemma.optionC ? (dilemma.optionC as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          name: beat.name,
+          description: beat.description,
+          beatOrder: beat.beatOrder,
         },
       });
-      dilemmaIdMap.set(dilemma.name, created.id);
+      storyBeatIdMap.set(beat.name, createdBeat.id);
+
+      // Create a DilemmaPoint from the beat's resolution options
+      // Map resolution options to optionA, optionB, optionC
+      const options = beat.resolutionOptions || [];
+      const optionA = options[0] ? {
+        description: options[0].description,
+        approachStyle: options[0].approachStyle,
+        personalityImplication: options[0].personalityImplication,
+        outcomeNarrative: options[0].outcomeNarrative,
+      } : null;
+      const optionB = options[1] ? {
+        description: options[1].description,
+        approachStyle: options[1].approachStyle,
+        personalityImplication: options[1].personalityImplication,
+        outcomeNarrative: options[1].outcomeNarrative,
+      } : null;
+      const optionC = options[2] ? {
+        description: options[2].description,
+        approachStyle: options[2].approachStyle,
+        personalityImplication: options[2].personalityImplication,
+        outcomeNarrative: options[2].outcomeNarrative,
+      } : null;
+
+      if (optionA && optionB) {
+        const createdDilemma = await tx.dilemmaPoint.create({
+          data: {
+            storyId,
+            storyBeatId: createdBeat.id,
+            name: beat.name,
+            description: `Resolution choice for: ${beat.description}`,
+            primaryDimension: options[0]?.primaryDimension || 'O',
+            secondaryDimension: options[1]?.primaryDimension,
+            optionA: optionA as unknown as Prisma.InputJsonValue,
+            optionB: optionB as unknown as Prisma.InputJsonValue,
+            optionC: optionC ? (optionC as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          },
+        });
+        dilemmaIdMap.set(beat.name, createdDilemma.id);
+      }
     }
 
     // ============================================
-    // 7. Create Puzzles with Steps
+    // 7. Create Puzzles with Steps (Diamond Structure)
     // ============================================
     let displayOrder = 0;
     for (const puzzle of data.puzzles.puzzles) {
       const roomId = roomIdMap.get(puzzle.roomName) || null;
-      const dilemmaId = puzzle.leadsToDilemma
-        ? dilemmaIdMap.get(puzzle.leadsToDilemma) || null
-        : null;
+      const storyBeatId = storyBeatIdMap.get(puzzle.storyBeatName) || null;
 
       const created = await tx.puzzle.create({
         data: {
           storyId,
+          storyBeatId,
           roomId,
           name: puzzle.name,
           description: puzzle.description,
-          rewardType: puzzle.reward.type,
-          rewardData: puzzle.reward.data as Prisma.InputJsonValue,
-          targetDilemmaId: dilemmaId,
+          branchPath: puzzle.branchPath,
+          isBottleneck: puzzle.isBottleneck || false,
+          rewardType: puzzle.reward?.type,
+          rewardData: (puzzle.reward?.data || {}) as Prisma.InputJsonValue,
           displayOrder: displayOrder++,
           isInitialObjective: puzzle.isInitialObjective || false,
-          discoversOnRoomEntry: puzzle.discoversOnRoomEntry || false,
+          // Initial objective puzzle is discovered and active from start
+          isDiscovered: puzzle.isInitialObjective || false,
+          isActive: puzzle.isInitialObjective || false,
+          status: puzzle.isInitialObjective ? 'active' : 'pending',
         },
       });
       puzzleIdMap.set(puzzle.name, created.id);
 
-      // Create puzzle steps
+      // Create puzzle steps with new fields
       for (const step of puzzle.steps) {
         await tx.puzzleStep.create({
           data: {
@@ -224,26 +259,23 @@ export async function persistGeneratedStory(
             stepNumber: step.stepNumber,
             description: step.description,
             hint: step.hint,
-            requirements: step.requirements as Prisma.InputJsonValue,
+            // New fields for node types and targets
+            nodeType: step.nodeType || 'action',
+            targetName: step.targetName,
+            // Completion
+            completionAction: step.completionAction,
+            requiredItems: (step.requiredItems || []) as Prisma.InputJsonValue,
+            requiredRoom: step.requiredRoom,
+            // Rewards from step
+            givesItem: step.givesItem,
+            givesClue: step.givesClue,
+            revealsSteps: [] as Prisma.InputJsonValue, // Will be linked after all steps created
+            // Visibility
+            isRevealed: step.isInitiallyRevealed,
+            revealedBy: step.isInitiallyRevealed ? 'initial' : null,
+            revealTriggers: (step.revealTriggers || []) as Prisma.InputJsonValue,
           },
         });
-
-        // Create timed event if step has urgency
-        if (step.timedUrgency) {
-          await tx.timedEvent.create({
-            data: {
-              storyId,
-              roomId,
-              name: `${puzzle.name}_step_${step.stepNumber}_timer`,
-              description: `Timer for ${puzzle.name} step ${step.stepNumber}`,
-              turnsRemaining: step.timedUrgency.turnsAllowed,
-              totalTurns: step.timedUrgency.turnsAllowed,
-              triggerNarrative: step.timedUrgency.failureConsequence,
-              consequence: { type: 'puzzle_step_failed', puzzleName: puzzle.name, stepNumber: step.stepNumber } as Prisma.InputJsonValue,
-              isActive: false, // Will be activated when puzzle step becomes current
-            },
-          });
-        }
       }
     }
 

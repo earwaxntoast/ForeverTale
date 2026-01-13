@@ -6,16 +6,11 @@ const prisma = new PrismaClient();
 // Types
 // ============================================
 
-export interface PuzzleStepRequirements {
-  requiredItems?: string[];
-  requiredActions?: string[];
-  requiredRoom?: string;
-}
-
 export interface ObjectiveStep {
   stepNumber: number;
   description: string;
   isCompleted: boolean;
+  isRevealed: boolean;
   hint?: string;
 }
 
@@ -76,16 +71,14 @@ export async function checkPuzzleStepCompletion(
   });
 
   for (const puzzle of activePuzzles) {
-    // Find the next incomplete step
-    const nextStep = puzzle.steps.find(s => !s.isCompleted);
+    // Find the next incomplete AND revealed step
+    const nextStep = puzzle.steps.find(s => !s.isCompleted && s.isRevealed);
     if (!nextStep) continue;
 
-    const requirements = nextStep.requirements as PuzzleStepRequirements;
-
-    // Check all requirements
-    const roomMatch = checkRoomRequirement(requirements, currentRoom.name);
-    const itemsMatch = checkItemRequirements(requirements, inventory);
-    const actionMatch = checkActionRequirements(requirements, playerAction);
+    // Check all requirements using new schema fields
+    const roomMatch = checkRoomRequirement(nextStep, currentRoom.name);
+    const itemsMatch = checkItemRequirements(nextStep, inventory);
+    const actionMatch = checkActionRequirements(nextStep, playerAction);
 
     // All requirements must match
     if (roomMatch && itemsMatch && actionMatch) {
@@ -100,6 +93,23 @@ export async function checkPuzzleStepCompletion(
 
       result.completedSteps.push(nextStep);
       result.narratives.push(`[Objective progress: ${nextStep.description}]`);
+
+      // Reveal the next step in this puzzle (progressive reveal)
+      const unreveledSteps = puzzle.steps.filter(
+        s => s.id !== nextStep.id && !s.isCompleted && !s.isRevealed
+      );
+      const nextUnrevealedStep = unreveledSteps
+        .sort((a, b) => a.stepNumber - b.stepNumber)[0];
+
+      if (nextUnrevealedStep) {
+        await prisma.puzzleStep.update({
+          where: { id: nextUnrevealedStep.id },
+          data: {
+            isRevealed: true,
+            revealedBy: nextStep.id,
+          },
+        });
+      }
 
       // Check if puzzle is now complete
       const remainingSteps = puzzle.steps.filter(
@@ -134,6 +144,9 @@ export async function checkPuzzleStepCompletion(
     }
   }
 
+  // Also check for step reveals based on player action (revealTriggers)
+  await checkStepReveals(storyId, playerAction);
+
   return result;
 }
 
@@ -141,45 +154,206 @@ export async function checkPuzzleStepCompletion(
  * Check if room requirement is met
  */
 function checkRoomRequirement(
-  requirements: PuzzleStepRequirements,
+  step: PuzzleStep,
   currentRoomName: string
 ): boolean {
-  if (!requirements.requiredRoom) return true;
-  return currentRoomName.toLowerCase() === requirements.requiredRoom.toLowerCase();
+  if (!step.requiredRoom) return true;
+  return currentRoomName.toLowerCase() === step.requiredRoom.toLowerCase();
 }
 
 /**
  * Check if item requirements are met
  */
 function checkItemRequirements(
-  requirements: PuzzleStepRequirements,
+  step: PuzzleStep,
   inventory: string[]
 ): boolean {
-  if (!requirements.requiredItems?.length) return true;
+  const requiredItems = step.requiredItems as string[] | null;
+  if (!requiredItems?.length) return true;
 
   const normalizedInventory = inventory.map(i => i.toLowerCase());
 
-  return requirements.requiredItems.every(requiredItem =>
+  return requiredItems.every(requiredItem =>
     normalizedInventory.some(invItem =>
       invItem.includes(requiredItem.toLowerCase())
     )
   );
 }
 
+// Common words to skip when matching actions
+const SKIP_WORDS = new Set(['the', 'a', 'an', 'at', 'on', 'in', 'to', 'with', 'of', 'and', 'or']);
+
+// Verb synonym groups - any verb in a group can match any other
+const VERB_SYNONYMS: Record<string, string[]> = {
+  examine: ['examine', 'look', 'inspect', 'study', 'view', 'check', 'observe', 'see', 'read'],
+  take: ['take', 'get', 'grab', 'pick', 'gather', 'collect', 'acquire', 'retrieve'],
+  touch: ['touch', 'feel', 'press', 'push', 'tap', 'poke'],
+  use: ['use', 'apply', 'activate', 'operate', 'employ'],
+  talk: ['talk', 'speak', 'ask', 'tell', 'say', 'chat', 'converse'],
+  open: ['open', 'unlock', 'unseal'],
+  move: ['move', 'push', 'pull', 'slide', 'shift'],
+  give: ['give', 'hand', 'offer', 'present', 'show'],
+  attack: ['attack', 'hit', 'strike', 'fight', 'punch', 'kick'],
+};
+
+// Build reverse lookup: word -> canonical verb
+const VERB_LOOKUP: Record<string, string> = {};
+for (const [canonical, synonyms] of Object.entries(VERB_SYNONYMS)) {
+  for (const syn of synonyms) {
+    VERB_LOOKUP[syn] = canonical;
+  }
+}
+
+/**
+ * Extract significant words from an action string
+ * Filters out common articles/prepositions
+ */
+function extractSignificantWords(action: string): string[] {
+  return action
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(word => word.length > 0 && !SKIP_WORDS.has(word));
+}
+
+/**
+ * Get canonical verb for a word (if it's a known verb)
+ */
+function getCanonicalVerb(word: string): string | null {
+  return VERB_LOOKUP[word.toLowerCase()] || null;
+}
+
+/**
+ * Check if two words match (considering synonyms for verbs)
+ */
+function wordsMatch(word1: string, word2: string): boolean {
+  const w1 = word1.toLowerCase();
+  const w2 = word2.toLowerCase();
+
+  // Direct match
+  if (w1 === w2) return true;
+
+  // Partial match (one contains the other)
+  if (w1.includes(w2) || w2.includes(w1)) return true;
+
+  // Verb synonym match
+  const canon1 = getCanonicalVerb(w1);
+  const canon2 = getCanonicalVerb(w2);
+  if (canon1 && canon2 && canon1 === canon2) return true;
+
+  return false;
+}
+
 /**
  * Check if action requirements are met
+ * Uses flexible matching with verb synonyms and partial word matching
+ * Now uses step.completionAction instead of requirements.requiredActions
  */
 function checkActionRequirements(
-  requirements: PuzzleStepRequirements,
+  step: PuzzleStep,
   playerAction: string
 ): boolean {
-  if (!requirements.requiredActions?.length) return true;
+  const completionAction = step.completionAction;
+  if (!completionAction) return true;
 
+  const playerWords = extractSignificantWords(playerAction);
+  const requiredWords = extractSignificantWords(completionAction);
+
+  // Strategy 1: Direct substring match (original behavior)
+  if (playerAction.toLowerCase().includes(completionAction.toLowerCase())) {
+    return true;
+  }
+
+  // Strategy 2: Check if all required words are in player action (with synonym support)
+  // This handles: required="examine blueprints", player="look at the blueprints"
+  const allRequiredWordsMatch = requiredWords.every(reqWord =>
+    playerWords.some(playerWord => wordsMatch(playerWord, reqWord))
+  );
+
+  if (allRequiredWordsMatch && requiredWords.length > 0) {
+    return true;
+  }
+
+  // Strategy 3: Check if player action words are all in required action (with synonym support)
+  // This handles: required="touch Floating Hammer", player="touch hammer"
+  const allPlayerWordsMatch = playerWords.every(playerWord =>
+    requiredWords.some(reqWord => wordsMatch(playerWord, reqWord))
+  );
+
+  if (allPlayerWordsMatch && playerWords.length > 0) {
+    return true;
+  }
+
+  // Strategy 4: Verb + any noun match
+  // Check if the verb matches AND at least one noun matches
+  if (playerWords.length >= 1 && requiredWords.length >= 1) {
+    const playerVerb = playerWords[0];
+    const requiredVerb = requiredWords[0];
+    const verbMatches = wordsMatch(playerVerb, requiredVerb);
+
+    if (verbMatches) {
+      // Check if any noun from player matches any noun from required
+      const playerNouns = playerWords.slice(1);
+      const requiredNouns = requiredWords.slice(1);
+
+      const anyNounMatches = playerNouns.some(pn =>
+        requiredNouns.some(rn => wordsMatch(pn, rn))
+      );
+
+      if (anyNounMatches || requiredNouns.length === 0) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if player action triggers any step reveals
+ * Steps can be revealed early by matching their revealTriggers
+ */
+async function checkStepReveals(storyId: string, playerAction: string): Promise<void> {
   const normalizedAction = playerAction.toLowerCase();
 
-  return requirements.requiredActions.some(requiredAction =>
-    normalizedAction.includes(requiredAction.toLowerCase())
-  );
+  // Find all unrevealed steps in active puzzles
+  const activePuzzles = await prisma.puzzle.findMany({
+    where: {
+      storyId,
+      isDiscovered: true,
+      status: 'active',
+    },
+    include: {
+      steps: {
+        where: { isRevealed: false },
+        orderBy: { stepNumber: 'asc' },
+      },
+    },
+  });
+
+  for (const puzzle of activePuzzles) {
+    for (const step of puzzle.steps) {
+      const triggers = step.revealTriggers as string[] | null;
+      if (!triggers?.length) continue;
+
+      // Check if player action matches any reveal trigger
+      const triggerMatched = triggers.some(trigger => {
+        const normalizedTrigger = trigger.toLowerCase();
+        // Direct match or word overlap
+        return normalizedAction.includes(normalizedTrigger) ||
+          normalizedTrigger.includes(normalizedAction);
+      });
+
+      if (triggerMatched) {
+        await prisma.puzzleStep.update({
+          where: { id: step.id },
+          data: {
+            isRevealed: true,
+            revealedBy: `action:${playerAction.substring(0, 50)}`,
+          },
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -331,6 +505,7 @@ async function activateLinkedPuzzles(completedPuzzleId: string): Promise<Puzzle[
 /**
  * Get discovered objectives for sidebar display
  * Only shows puzzles that have been discovered by the player
+ * Only shows steps that have been revealed (progressive reveal system)
  */
 export async function getObjectives(storyId: string): Promise<ObjectiveDisplay[]> {
   const puzzles = await prisma.puzzle.findMany({
@@ -349,12 +524,16 @@ export async function getObjectives(storyId: string): Promise<ObjectiveDisplay[]
     id: puzzle.id,
     name: puzzle.name,
     description: puzzle.description,
-    steps: puzzle.steps.map(step => ({
-      stepNumber: step.stepNumber,
-      description: step.description,
-      isCompleted: step.isCompleted,
-      hint: step.hint || undefined,
-    })),
+    // Only include revealed steps (progressive reveal)
+    steps: puzzle.steps
+      .filter(step => step.isRevealed)
+      .map(step => ({
+        stepNumber: step.stepNumber,
+        description: step.description,
+        isCompleted: step.isCompleted,
+        isRevealed: step.isRevealed,
+        hint: step.hint || undefined,
+      })),
     isActive: puzzle.status === 'active',
   }));
 }
@@ -477,9 +656,9 @@ export async function discoverPuzzlesFromItem(
   for (const puzzle of undiscoveredPuzzles) {
     // Check if any step requires this item
     for (const step of puzzle.steps) {
-      const requirements = step.requirements as PuzzleStepRequirements;
-      if (requirements.requiredItems) {
-        const hasMatch = requirements.requiredItems.some(reqItem =>
+      const requiredItems = step.requiredItems as string[] | null;
+      if (requiredItems?.length) {
+        const hasMatch = requiredItems.some(reqItem =>
           normalizedItem.includes(reqItem.toLowerCase()) ||
           reqItem.toLowerCase().includes(normalizedItem)
         );
@@ -504,7 +683,7 @@ export async function discoverPuzzlesFromItem(
 
 /**
  * Discover puzzles when player performs an action
- * If an action matches any puzzle step's requiredActions, that puzzle is discovered
+ * If an action matches any puzzle step's completionAction or revealTriggers, that puzzle is discovered
  */
 export async function discoverPuzzlesFromAction(
   storyId: string,
@@ -530,25 +709,35 @@ export async function discoverPuzzlesFromAction(
   });
 
   for (const puzzle of undiscoveredPuzzles) {
-    // Check if any step's required action is part of the player's action
+    // Check if any step's completionAction or revealTriggers match the player's action
     for (const step of puzzle.steps) {
-      const requirements = step.requirements as PuzzleStepRequirements;
-      if (requirements.requiredActions) {
-        const hasMatch = requirements.requiredActions.some(reqAction =>
-          normalizedAction.includes(reqAction.toLowerCase())
-        );
+      let hasMatch = false;
 
-        if (hasMatch) {
-          // Discover the puzzle
-          await prisma.puzzle.update({
-            where: { id: puzzle.id },
-            data: { isDiscovered: true },
-          });
+      // Check completionAction
+      if (step.completionAction) {
+        hasMatch = normalizedAction.includes(step.completionAction.toLowerCase());
+      }
 
-          result.discoveredPuzzles.push(puzzle);
-          result.narratives.push(`[New objective discovered: ${puzzle.name}]`);
-          break; // Only need to discover once per puzzle
+      // Check revealTriggers
+      if (!hasMatch) {
+        const triggers = step.revealTriggers as string[] | null;
+        if (triggers?.length) {
+          hasMatch = triggers.some(trigger =>
+            normalizedAction.includes(trigger.toLowerCase())
+          );
         }
+      }
+
+      if (hasMatch) {
+        // Discover the puzzle
+        await prisma.puzzle.update({
+          where: { id: puzzle.id },
+          data: { isDiscovered: true },
+        });
+
+        result.discoveredPuzzles.push(puzzle);
+        result.narratives.push(`[New objective discovered: ${puzzle.name}]`);
+        break; // Only need to discover once per puzzle
       }
     }
   }

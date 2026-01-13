@@ -498,25 +498,22 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
     const currentRoom = rooms.find(r => r.id === playerState?.currentRoomId);
     const playerInVehicle = currentRoom?.isVehicle || false;
 
-    // Build map data - only include visited rooms (and exclude undocked vehicles)
+    // Build map data - only visited rooms, but show ALL visible exits (even to unvisited rooms)
     const mapData = rooms
       .filter(room => {
-        // Include if visited or is current room
-        const isVisitedOrCurrent = room.visitCount > 0 || room.firstVisitedAt !== null || room.id === playerState?.currentRoomId;
-        if (!isVisitedOrCurrent) return false;
-
-        // For vehicles, only show if docked somewhere
+        const isVisited = room.visitCount > 0 || room.firstVisitedAt !== null || room.id === playerState?.currentRoomId;
+        if (!isVisited) return false;
+        // Skip undocked vehicles
         if (room.isVehicle && !room.dockedAtRoomId) return false;
-
         return true;
       })
       .map(room => {
         const hiddenExits = (room.hiddenExits as string[]) || [];
         const discoveredExits = (room.discoveredExits as string[]) || [];
 
-        // An exit is visible if: it exists AND (it's not hidden OR it has been discovered)
-        const isExitVisible = (direction: string, roomId: string | null): boolean => {
-          if (!roomId) return false;
+        // Exit is shown if: exit exists AND is visible (not hidden or discovered)
+        const isExitVisible = (direction: string, targetRoomId: string | null): boolean => {
+          if (!targetRoomId) return false;
           const isHidden = hiddenExits.includes(direction);
           const isDiscovered = discoveredExits.includes(direction);
           return !isHidden || isDiscovered;
@@ -542,7 +539,7 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
           x: displayX,
           y: displayY,
           z: displayZ,
-          isVisited: room.visitCount > 0 || room.firstVisitedAt !== null,
+          isVisited: true,
           isCurrent: room.id === playerState?.currentRoomId,
           hasPortal: !!(room.atmosphere as Record<string, unknown>)?.portalTo,
           isVehicle: room.isVehicle || false,
@@ -567,13 +564,14 @@ router.get('/:id/sidebar', async (req: Request, res: Response) => {
         traits: backstory?.traits || [],
         isBackstoryRevealed: backstory?.isRevealed || false,
       },
-      abilities: abilities.map(a => ({
-        name: a.name,
-        level: Number(a.level),
-        progress: a.timesUsed > 0
-          ? Math.floor((a.timesSucceeded / a.timesUsed) * 100)
-          : 0,
-      })),
+      abilities: abilities.map(a => {
+        const rawLevel = Number(a.level);
+        return {
+          name: a.name,
+          level: Math.floor(rawLevel), // Whole number for display and rolls
+          progress: Math.round((rawLevel % 1) * 100), // Decimal portion as percentage (e.g., 7.2 -> 20%)
+        };
+      }),
       notes: [
         ...facts.map(f => f.content),
         ...revealedSecrets.map(s => `[Secret] ${s.content}`),

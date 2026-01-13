@@ -6,6 +6,7 @@ import {
   AllStepData,
   GenerationStepName,
   GENERATION_STEPS,
+  CoherencePassData,
 } from './types.js';
 import * as steps from './steps.js';
 
@@ -70,15 +71,15 @@ const STEP_LOG_MESSAGES: Record<GenerationStepName, string[]> = {
     '[ OK ] Synchronizing past-present resonance...',
     '[ OK ] Validating identity coherence...',
   ],
-  dilemmas: [
+  storyBeats: [
+    '[ OK ] Analyzing narrative arc structure...',
+    '[ OK ] Identifying convergence points...',
+    '[ OK ] Mapping dramatic tension curves...',
     '[ OK ] Initializing moral complexity engine...',
-    '[ OK ] Loading ethical paradox matrices...',
-    '[ OK ] Calibrating parallel dimension sensors...',
     '[ OK ] Generating choice bifurcation points...',
-    '[ OK ] Establishing consequence probability trees...',
     '[ OK ] Binding psychological revelation triggers...',
-    '[ OK ] Seeding character-defining moments...',
-    '[ OK ] Validating dilemma authenticity scores...',
+    '[ OK ] Calculating climax trajectory...',
+    '[ OK ] Validating narrative coherence...',
   ],
   puzzles: [
     '[ OK ] Constructing cognitive challenge lattices...',
@@ -110,6 +111,16 @@ const STEP_LOG_MESSAGES: Record<GenerationStepName, string[]> = {
     '[ OK ] Generating mystery depth layers...',
     '[ OK ] Validating secret coherence matrices...',
   ],
+  coherencePass: [
+    '[ OK ] Scanning narrative dependency graph...',
+    '[ OK ] Identifying story-critical entities...',
+    '[ OK ] Cross-referencing puzzle requirements...',
+    '[ OK ] Analyzing character-secret bindings...',
+    '[ OK ] Enhancing foreshadowing parameters...',
+    '[ OK ] Weaving subtle narrative threads...',
+    '[ OK ] Synchronizing description coherence...',
+    '[ OK ] Validating narrative continuity...',
+  ],
   opening: [
     '[ OK ] Composing initial narrative voice...',
     '[ OK ] Establishing atmospheric parameters...',
@@ -132,16 +143,73 @@ const STEP_FUNCTIONS: Record<GenerationStepName, StepFunction> = {
   connectingAreas: steps.generateConnectingAreas,
   characters: steps.generateCharacters,
   backstory: steps.generateBackstory,
-  dilemmas: steps.generateDilemmas,
+  storyBeats: steps.generateStoryBeats,
   puzzles: steps.generatePuzzles,
   startingSkills: steps.generateStartingSkills,
   secretFacts: steps.generateSecretFacts,
+  coherencePass: steps.generateCoherencePass,
   opening: steps.generateOpening,
 };
 
 // Helper for exponential backoff
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Apply coherence pass updates back to the existing step data
+function applyCoherenceUpdates(
+  stepData: Partial<AllStepData>,
+  coherenceData: CoherencePassData
+): void {
+  const connectingAreas = stepData.connectingAreas;
+  const characters = stepData.characters;
+
+  if (!connectingAreas || !characters) {
+    console.warn('[Coherence] Missing connectingAreas or characters data');
+    return;
+  }
+
+  // Apply room updates
+  for (const update of coherenceData.roomUpdates) {
+    const room = connectingAreas.rooms.find(r => r.name === update.roomName);
+    if (room) {
+      if (update.updatedFullDescription) {
+        room.fullDescription = update.updatedFullDescription;
+      }
+      if (update.updatedAtmosphere) {
+        room.suggestedAtmosphere = {
+          ...room.suggestedAtmosphere,
+          ...update.updatedAtmosphere,
+        };
+      }
+    }
+  }
+
+  // Apply object updates
+  for (const update of coherenceData.objectUpdates) {
+    const room = connectingAreas.rooms.find(r => r.name === update.roomName);
+    if (room) {
+      const obj = room.objects.find(o => o.name === update.objectName);
+      if (obj) {
+        obj.description = update.updatedDescription;
+      }
+    }
+  }
+
+  // Apply character updates
+  for (const update of coherenceData.characterUpdates) {
+    const char = characters.characters.find(c => c.name === update.characterName);
+    if (char) {
+      if (update.updatedBriefDescription) {
+        char.briefDescription = update.updatedBriefDescription;
+      }
+      if (update.updatedVoiceDescription) {
+        char.voiceDescription = update.updatedVoiceDescription;
+      }
+    }
+  }
+
+  console.log(`[Coherence] Applied updates: ${coherenceData.roomUpdates.length} rooms, ${coherenceData.objectUpdates.length} objects, ${coherenceData.characterUpdates.length} characters`);
 }
 
 /**
@@ -294,6 +362,14 @@ export class StoryGenerationOrchestrator extends EventEmitter {
         // Store result in context
         (this.context.stepData as Record<string, unknown>)[stepConfig.name] = result;
         this.context.completedSteps.push(stepConfig.name);
+
+        // Special handling: apply coherence pass updates to existing data
+        if (stepConfig.name === 'coherencePass') {
+          applyCoherenceUpdates(this.context.stepData, result as CoherencePassData);
+          // Re-persist the updated connectingAreas and characters
+          await this.persistStepResult('connectingAreas', this.context.stepData.connectingAreas);
+          await this.persistStepResult('characters', this.context.stepData.characters);
+        }
 
         // Persist intermediate result for recovery
         await this.persistStepResult(stepConfig.name, result);
