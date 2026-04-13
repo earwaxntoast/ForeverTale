@@ -4,38 +4,42 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config();
 
-// Import routes
 import interviewRouter from './routes/interview.js';
 import storiesRouter from './routes/stories.js';
 import mediaRouter from './routes/media.js';
 import adminRouter from './routes/admin.js';
+import { attachUser, requireUser } from './middleware/muellerauth.js';
+import { config } from './config/index.js';
 
 const app = express();
-const PORT = process.env.PORT || 4000;
 
-// Middleware
+// Behind Caddy on the same box.
+app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 app.use(helmet());
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: config.clientUrl,
+    credentials: true,
+  })
+);
 app.use(morgan('dev'));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.use(attachUser);
 
-// Health check
-app.get('/health', (req, res) => {
+// Health + API info (public)
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API Info
-app.get('/api', (req, res) => {
+app.get('/api', (_req, res) => {
   res.json({
     message: 'ForeverTale API',
     version: '1.0.0',
+    auth: 'muellerauth',
     endpoints: {
+      me: 'GET /api/me',
       interview: 'POST /api/interview',
       stories: {
         create: 'POST /api/stories',
@@ -51,33 +55,37 @@ app.get('/api', (req, res) => {
   });
 });
 
-// Routes
+// Who-am-I probe — safe public endpoint, returns { user: null } when unauthenticated.
+app.get('/api/me', (req, res) => {
+  if (!req.user) return res.json({ user: null });
+  res.json({
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      displayName: req.user.displayName,
+      isAdmin: req.user.isAdmin,
+    },
+  });
+});
+
+// All /api/* routes beyond this point require an authenticated muellerauth session.
+app.use('/api', requireUser);
 app.use('/api/interview', interviewRouter);
 app.use('/api/stories', storiesRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/admin', adminRouter);
 
-// 404 handler
-app.use((req, res) => {
+app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-// Error handler
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`
-╔═══════════════════════════════════════════════╗
-║           ForeverTale API Server              ║
-║═══════════════════════════════════════════════║
-║  Status:  Running                             ║
-║  Port:    ${PORT}                                ║
-║  Mode:    ${process.env.NODE_ENV || 'development'}                       ║
-╚═══════════════════════════════════════════════╝
-  `);
+app.listen(config.port, () => {
+  console.log(`ForeverTale API listening on :${config.port} (${config.nodeEnv})`);
 });
 
 export default app;

@@ -7,17 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Users & Auth
+// Users — identity is sourced from muellerauth (auth.themuellerhouse.com).
+// The email is the stable link; displayName is mirrored on each login.
 model User {
   id          String   @id @default(uuid())
-  firebaseUid String   @unique @map("firebase_uid")
-  email       String
+  email       String   @unique
   displayName String?  @map("display_name")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   preferences        UserPreferences?
-  subscription       Subscription?
   stories            Story[]
   callbackCandidates CallbackCandidate[]
 
@@ -59,37 +58,6 @@ enum AudioMode {
   effects_only
   voiceover_only
   full_character
-}
-
-// Subscriptions
-model Subscription {
-  id                     String             @id @default(uuid())
-  userId                 String             @unique @map("user_id")
-  stripeSubscriptionId   String?            @unique @map("stripe_subscription_id")
-  stripeCustomerId       String?            @map("stripe_customer_id")
-  tier                   SubscriptionTier   @default(free)
-  status                 SubscriptionStatus @default(active)
-  currentPeriodStart     DateTime?          @map("current_period_start")
-  currentPeriodEnd       DateTime?          @map("current_period_end")
-  storiesUsedThisPeriod  Int                @default(0) @map("stories_used_this_period")
-  createdAt              DateTime           @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("subscriptions")
-}
-
-enum SubscriptionTier {
-  free
-  basic
-  pro
-  unlimited
-}
-
-enum SubscriptionStatus {
-  active
-  cancelled
-  past_due
 }
 
 // Stories

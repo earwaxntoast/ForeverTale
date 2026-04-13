@@ -31,39 +31,17 @@ router.post('/', async (req: Request, res: Response) => {
     // Extract themes from interview
     const themes = extractThemesSimple(interviewExchanges);
 
-    // For now, use a mock user ID (auth comes later)
-    const mockUserId = 'mock-user-' + Date.now();
-
-    // Check if user exists, create if not
-    let user = await prisma.user.findFirst({
-      where: { firebaseUid: mockUserId },
-    });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          firebaseUid: mockUserId,
-          email: 'anonymous@forevertale.game',
-          displayName: playerName,
-        },
-      });
-
-      // Create default preferences
-      await prisma.userPreferences.create({
-        data: {
-          userId: user.id,
-        },
-      });
-
-      // Create free subscription
-      await prisma.subscription.create({
-        data: {
-          userId: user.id,
-          tier: 'free',
-          status: 'active',
-        },
-      });
+    if (!req.user) {
+      return res.status(401).json({ error: 'unauthenticated' });
     }
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } });
+
+    // Ensure preferences row exists (idempotent).
+    await prisma.userPreferences.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: { userId: user.id },
+    });
 
     // Create the story record first (placeholder, will be filled by orchestrator)
     const story = await prisma.story.create({

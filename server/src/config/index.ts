@@ -16,46 +16,34 @@ function optional(key: string, defaultValue: string): string {
 
 export const config = {
   // Server
-  port: parseInt(optional('PORT', '4000'), 10),
+  port: parseInt(optional('PORT', '3003'), 10),
   nodeEnv: optional('NODE_ENV', 'development'),
-  clientUrl: optional('CLIENT_URL', 'http://localhost:3000'),
+  clientUrl: optional('CLIENT_URL', 'https://forevertale.themuellerhouse.com'),
 
   // Database
   databaseUrl: required('DATABASE_URL'),
 
-  // Redis
-  redisUrl: optional('REDIS_URL', 'redis://localhost:6379'),
+  // Redis (optional — workers degrade to best-effort inline if missing)
+  redisUrl: optional('REDIS_URL', ''),
 
-  // Firebase
-  firebase: {
-    projectId: required('FIREBASE_PROJECT_ID'),
-    clientEmail: required('FIREBASE_CLIENT_EMAIL'),
-    privateKey: required('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n'),
+  // Central auth service
+  muellerauth: {
+    url: optional('MUELLERAUTH_URL', 'https://auth.themuellerhouse.com'),
+    appSlug: optional('MUELLERAUTH_APP_SLUG', 'forevertale'),
   },
 
-  // AI Providers
+  // AI Providers (all optional — only routes that invoke them require them)
   ai: {
-    anthropic: required('ANTHROPIC_API_KEY'),
-    google: required('GOOGLE_AI_API_KEY'),
+    anthropic: optional('ANTHROPIC_API_KEY', ''),
+    google: optional('GOOGLE_AI_API_KEY', ''),
     grok: optional('GROK_API_KEY', ''),
     elevenlabs: optional('ELEVENLABS_API_KEY', ''),
   },
 
-  // Stripe
-  stripe: {
-    secretKey: required('STRIPE_SECRET_KEY'),
-    webhookSecret: required('STRIPE_WEBHOOK_SECRET'),
-    prices: {
-      basic: optional('STRIPE_PRICE_BASIC', ''),
-      pro: optional('STRIPE_PRICE_PRO', ''),
-      unlimited: optional('STRIPE_PRICE_UNLIMITED', ''),
-    },
-  },
-
-  // GCP Storage
+  // GCP Storage (optional)
   gcp: {
     projectId: optional('GCP_PROJECT_ID', ''),
-    storageBucket: optional('GCP_STORAGE_BUCKET', 'forevertale-media'),
+    storageBucket: optional('GCP_STORAGE_BUCKET', ''),
   },
 } as const;
 

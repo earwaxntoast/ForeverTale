@@ -86,7 +86,6 @@ router.post('/clear-all', async (req: Request, res: Response) => {
     await prisma.chapter.deleteMany({});
     await prisma.story.deleteMany({});
     await prisma.soundEffect.deleteMany({});
-    await prisma.subscription.deleteMany({});
     await prisma.userPreferences.deleteMany({});
     await prisma.user.deleteMany({});
 

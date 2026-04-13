@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ForeverTale</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; min-height: 100vh;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      background: #0b0b10; color: #cfd0d5;
+      display: grid; place-items: center; padding: 2rem;
+    }
+    main { max-width: 640px; width: 100%; }
+    h1 { font-family: Georgia, serif; font-size: 2.5rem; margin: 0 0 0.5rem; color: #e8dab3; }
+    p.sub { color: #8b8b95; margin: 0 0 2rem; }
+    .card {
+      background: #14141b; border: 1px solid #2a2a35;
+      padding: 1.5rem; border-radius: 4px;
+    }
+    .card + .card { margin-top: 1rem; }
+    a.btn, button.btn {
+      display: inline-block; padding: 0.6rem 1.2rem;
+      background: #d94f4f; color: #fff; text-decoration: none;
+      border: none; border-radius: 3px; cursor: pointer;
+      font: inherit;
+    }
+    a.btn.secondary, button.btn.secondary { background: #2a2a35; }
+    a.btn:hover, button.btn:hover { opacity: 0.9; }
+    code { background: #1a1a24; padding: 0 0.3rem; border-radius: 2px; color: #e8dab3; }
+    .muted { color: #6b6b75; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ForeverTale</h1>
+    <p class="sub">collaborative text storytelling · an experiment</p>
+
+    <div id="anon" class="card" hidden>
+      <p>Sign in to start a story.</p>
+      <p>
+        <a class="btn" id="loginBtn" href="#">Sign in with muellerauth</a>
+      </p>
+      <p class="muted">Don't have an account? <a href="https://auth.themuellerhouse.com/request-access">Request access</a>.</p>
+    </div>
+
+    <div id="authed" class="card" hidden>
+      <p>Signed in as <strong id="displayName"></strong> (<code id="email"></code>).</p>
+      <p class="muted">The API is live at <code>/api</code>. This stub confirms the muellerauth integration works end-to-end; the full client will be rebuilt in a later pass.</p>
+      <p>
+        <button class="btn secondary" id="logoutBtn">Log out</button>
+      </p>
+    </div>
+
+    <div id="denied" class="card" hidden>
+      <p>You're signed in to muellerauth, but don't yet have access to ForeverTale.</p>
+      <p class="muted">Ask an admin to grant your account the <code>forevertale</code> app.</p>
+    </div>
+
+    <p class="muted" style="margin-top:2rem">
+      <a href="https://themuellerhouse.com">← back to The Mueller House</a>
+    </p>
+  </main>
+
+  <script>
+    (async function () {
+      const loginRedirect = () =>
+        "https://auth.themuellerhouse.com/login?redirect=" +
+        encodeURIComponent(window.location.origin + "/");
+
+      const res = await fetch("/api/me", { credentials: "include" });
+      if (!res.ok) {
+        document.getElementById("anon").hidden = false;
+        document.getElementById("loginBtn").href = loginRedirect();
+        return;
+      }
+      const body = await res.json();
+      if (!body.user) {
+        // Authenticated with muellerauth but without the forevertale app slug.
+        // /api/me returns { user: null } in that case because attachUser only
+        // hydrates req.user when the app slug is granted.
+        const authCheck = await fetch("https://auth.themuellerhouse.com/session", { credentials: "include" });
+        if (authCheck.ok) {
+          document.getElementById("denied").hidden = false;
+        } else {
+          document.getElementById("anon").hidden = false;
+          document.getElementById("loginBtn").href = loginRedirect();
+        }
+        return;
+      }
+      document.getElementById("displayName").textContent = body.user.displayName || body.user.email;
+      document.getElementById("email").textContent = body.user.email;
+      document.getElementById("authed").hidden = false;
+      document.getElementById("logoutBtn").addEventListener("click", () => {
+        window.location.href = "https://auth.themuellerhouse.com/logout";
+      });
+    })();
+  </script>
+</body>
+</html>
